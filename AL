@@ -11,33 +11,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# Configuration for the 34th Legislature (2025-2026)
-BASE_URL    = "https://www.akleg.gov"
-LEG_NUMBER  = 34
-MAX_WORKERS = 10  # threads for detail-page fetch
+# ----- Configuration -----
+BASE_URL    = "https://www.akleg.gov"   # Alaska Legislature base URL
+LEG_NUMBER  = 34                         # 34th Legislature (2025-2026)
+MAX_WORKERS = 10                         # threads for detail-page fetch
 
-# Create a session that:
-#  - Disables SSL verification
-#  - Retries on 502, 503, and 504 errors
+# Build session: disable SSL verify & retry on server errors
 session = requests.Session()
 session.verify = False
-retries = Retry(
-    total=5,
-    backoff_factor=1,
-    status_forcelist=[502, 503, 504],
-    allowed_methods=["GET"]
-)
+retries = Retry(total=5, backoff_factor=1, status_forcelist=[502,503,504], allowed_methods=["GET"])
 adapter = HTTPAdapter(max_retries=retries)
-session.mount("https://", adapter)
 session.mount("http://", adapter)
+session.mount("https://", adapter)
 
-# Timestamped filename (e.g. alaska_bills_34th_legislature_20250710_153045.csv)
+# Timestamped filename to avoid overwrite
 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-OUTPUT_CSV = f'alaska_bills_34th_legislature_{ts}.csv'
+OUTPUT_CSV = f"alaska_bills_34th_legislature_{ts}.csv"
 
-
+# ----- Step 1: Fetch and parse list page -----
 def fetch_list_page() -> str:
-    """Fetch the main list page for the 34th Legislature."""
+    """Download the HTML for the 34th Legislature bill list page."""
     url = f"{BASE_URL}/basis/Bill/Range/{LEG_NUMBER}?session=&bill1=&bill2="
     resp = session.get(url, timeout=10)
     resp.raise_for_status()
@@ -45,54 +38,52 @@ def fetch_list_page() -> str:
 
 
 def parse_list(html: str) -> list:
-    """Parse the list page and return metadata entries and detail URLs."""
+    """Parse the bill list table and build entries with correct, encoded URLs."""
     soup = BeautifulSoup(html, 'html.parser')
-    # Identify the table by its headers
-    list_table = None
-    for table in soup.find_all('table'):
-        headers = [th.get_text(strip=True) for th in table.find_all('th')]
-        if 'Bill' in headers and 'Short Title' in headers:
-            list_table = table
-            break
-    if not list_table:
+    table = soup.find('table')  # first table is the bill list
+    if not table:
         return []
 
-    rows = list_table.find_all('tr')[1:]
     entries = []
-    for tr in rows:
+    # Skip header row
+    for tr in table.find_all('tr')[1:]:
         cols = tr.find_all('td')
-        # Expect at least 5 columns: Bill, Short Title, Sponsor(s), Current Status, Status Date
         if len(cols) < 5:
             continue
+        # Extract the <a> tag
         a = cols[0].find('a')
-        href = a['href']
+        raw_href = a['href'] if a else ''
+        # Build absolute URL and encode spaces to %20
+        detail_url = BASE_URL + raw_href.strip()
+        detail_url = re.sub(r"\s+", '%20', detail_url)
+
         entries.append({
-            'Bill':           a.get_text(strip=True),
-            'DetailURL':      BASE_URL + href,
-            'Bill_link':      BASE_URL + href,
+            'Bill':           a.get_text(strip=True) if a else '',
+            'DetailURL':      detail_url,
+            'Bill_link':      detail_url,
             'Short Title':    cols[1].get_text(strip=True),
             'Sponsor(s)':     cols[2].get_text(strip=True),
-            'Current Status': cols[3].get_text(strip=True),
-            'Status Date':    cols[4].get_text(strip=True),
+            'Current Status': cols[4].get_text(strip=True),
+            'Status Date':    cols[5].get_text(strip=True),
         })
+    # Debug sample
+    print("Sample encoded links:", [e['DetailURL'] for e in entries[:5]])
     return entries
 
-
+# ----- Step 2: Fetch and parse detail page -----
 def parse_detail(entry: dict) -> dict:
-    """Fetch a bill's detail page and extract Year and full Title."""
+    """Fetch each bill's detail page and extract Year & full Title."""
+    # 1) Year from Status Date (last 4 digits)
+    status = entry.get('Status Date', '')
+    m = re.search(r"(\d{4})$", status)
+    entry['Year'] = m.group(1) if m else ''
+
+    # 2) Download and parse detail page HTML
     resp = session.get(entry['DetailURL'], timeout=10)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, 'html.parser')
 
-    # Extract Year from the <h1> (e.g. "34th Legislature (2025-2026)")
-    entry['Year'] = ''
-    h1 = soup.find('h1')
-    if h1:
-        match = re.search(r"\((\d{4}(?:-\d{4})?)\)", h1.get_text())
-        if match:
-            entry['Year'] = match.group(1)
-
-    # Extract the full Title from the <li><span>Title</span><strong>…</strong></li>
+    # 3) Extract Title from <li><span>Title</span><strong>…</strong></li>
     entry['Title'] = ''
     for li in soup.find_all('li'):
         span = li.find('span')
@@ -102,35 +93,36 @@ def parse_detail(entry: dict) -> dict:
                 entry['Title'] = strong.get_text(strip=True)
             break
 
+    # 4) Extraction timestamp
     entry['extracted_date'] = datetime.datetime.today().date().isoformat()
     return entry
 
-
+# ----- Orchestration -----
 def scrape_34th() -> pd.DataFrame:
-    """Orchestrate the full scraping of the 34th Legislature."""
-    html = fetch_list_page()
+    """End-to-end scraping: list fetch, detail fetch in parallel, assemble DataFrame."""
+    html    = fetch_list_page()
     entries = parse_list(html)
     print(f"Found {len(entries)} bills on list page.")
 
-    # Fetch details in parallel
     records = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(parse_detail, e.copy()) for e in entries]
         for future in as_completed(futures):
             try:
                 records.append(future.result())
-            except Exception as e:
-                print(f"Detail fetch failed: {e}")
+            except Exception as err:
+                print("Detail fetch error:", err)
 
-    # Build and return DataFrame
+    # Build DataFrame with defined column order
     df = pd.DataFrame(records, columns=[
         'Bill', 'Current Status', 'Status Date', 'Sponsor(s)',
         'Title', 'Short Title', 'Year', 'Bill_link', 'extracted_date'
     ])
     return df
 
-
+# ----- Main -----
 if __name__ == '__main__':
     df = scrape_34th()
+    print(df.head())
     df.to_csv(OUTPUT_CSV, index=False)
     print(f"✅ Saved {len(df)} bills to {OUTPUT_CSV}")
