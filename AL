@@ -1,0 +1,135 @@
+import os
+import datetime
+import re
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Configuration for 34th Legislature only
+BASE_URL    = "https://www.akleg.gov"
+LEG_NUMBER  = 34  # 34th Legislature
+MAX_WORKERS = 10  # threads for detail-page fetch
+
+# Build a session with retry logic for robustness
+session = requests.Session()
+retries = Retry(
+    total=5,
+    backoff_factor=1,
+    status_forcelist=[502, 503, 504],
+    allowed_methods=["GET"]
+)
+adapter = HTTPAdapter(max_retries=retries)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
+# Timestamped filename to keep snapshots
+ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+OUTPUT_CSV = f'alaska_bills_34th_legislature_{ts}.csv'
+
+
+def fetch_list_page() -> str:
+    """Retrieve the HTML for the 34th Legislature bill list."""
+    url = f"{BASE_URL}/basis/Bill/Range/{LEG_NUMBER}?session=&bill1=&bill2="
+    resp = session.get(url, timeout=10)
+    resp.raise_for_status()
+    return resp.text
+
+
+def parse_list(html: str) -> list:
+    """Parse the list page into bill entries with metadata and detail URLs."""
+    soup = BeautifulSoup(html, 'html.parser')
+    table = next(
+        (t for t in soup.find_all('table') if 'Short Title' in t.find('tr').get_text()),
+        None
+    )
+    if not table:
+        return []
+    rows = table.find_all('tr')[1:]
+    entries = []
+    for tr in rows:
+        cols = tr.find_all('td')
+        if len(cols) < 6:
+            continue
+        link_tag = cols[0].find('a')
+        href = link_tag['href']
+        entries.append({
+            'Bill':            link_tag.get_text(strip=True),
+            'DetailURL':       BASE_URL + href,
+            'Bill_link':       BASE_URL + href,
+            'Short Title':     cols[1].get_text(strip=True),
+            'Sponsor(s)':      cols[2].get_text(strip=True),
+            'Current Status':  cols[4].get_text(strip=True),
+            'Status Date':     cols[5].get_text(strip=True)
+        })
+    return entries
+
+
+def parse_detail(entry: dict) -> dict:
+    """Fetch detail page, extract dynamic Year and full Title."""
+    resp = session.get(entry['DetailURL'], timeout=10)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, 'html.parser')
+
+    # Extract session years from the 'Session' list item (e.g. "34th Legislature (2025-2026)")
+    session_li = soup.find('li',
+        lambda tag: tag.find('span') and tag.find('span').get_text(strip=True).upper() == 'SESSION'
+    )
+    if session_li:
+        strong = session_li.find('strong')
+        if strong:
+            # Find all four-digit years in the text
+            years = re.findall(r"\d{4}", strong.get_text(strip=True))
+            if years:
+                # Join multiple years with a hyphen (e.g. "2025-2026")
+                entry['Year'] = '-'.join(years)
+            else:
+                entry['Year'] = ''
+    else:
+        entry['Year'] = ''
+
+    # Extract full Title from <li><span>Title</span><strong>…</strong></li>
+    title = ''
+    for li in soup.find_all('li'):
+        span = li.find('span')
+        if span and span.get_text(strip=True).upper() == 'TITLE':
+            strong = li.find('strong')
+            if strong:
+                title = strong.get_text(strip=True)
+            break
+    entry['Title'] = title
+    entry['extracted_date'] = datetime.datetime.today().date().isoformat()
+    return entry
+
+
+def scrape_34th() -> pd.DataFrame:
+    """Scrape all bills from the 34th Legislature into a DataFrame."""
+    html = fetch_list_page()
+    entries = parse_list(html)
+    results = []
+    # Fetch detail pages in parallel
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(parse_detail, e.copy()) for e in entries]
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception:
+                # Skip failed details
+                pass
+
+    # Build DataFrame with explicit column order
+    df = pd.DataFrame(results, columns=[
+        'Bill', 'Current Status', 'Status Date', 'Sponsor(s)',
+        'Title', 'Short Title', 'Year', 'Bill_link', 'extracted_date'
+    ])
+    return df
+
+
+if __name__ == '__main__':
+    df = scrape_34th()
+    df.to_csv(OUTPUT_CSV, index=False)
+    print(f"✅ Saved {len(df)} bills to {OUTPUT_CSV}")
+
+
