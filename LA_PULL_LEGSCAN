@@ -1,0 +1,166 @@
+import requests                       # HTTP client for interacting with LegiScan Pull API
+import base64                         # Decode Base64-encoded ZIP payloads
+import os                             # File-system operations
+import json                           # Persist & load our metadata file
+import zipfile                        # Inspect and extract ZIP archives
+import pandas as pd                  # Data manipulation library
+
+# ─── Configuration ──────────────────────────────────────────────────────────
+API_KEY       = "1ac8934d9395e3444e7408e3aed9d42d"        # ← replace with your actual LegiScan key
+STATE         = "LA"                  # Louisiana state abbreviation
+TARGET_YEARS  = [2025, 2026]           # Sessions you care about
+OUTPUT_DIR    = "datasets"            # Root folder for saved ZIPs and CSVs
+METADATA_FILE = "metadata.json"       # Tracks last-seen dataset_hash per session
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_dataset_list(state):
+    """
+    Calls getDatasetList to retrieve all available session snapshots for a given state.
+    """
+    url = f"https://api.legiscan.com/?key={API_KEY}&op=getDatasetList&state={state}"
+    resp = requests.get(url)
+    data = resp.json()
+    if data.get("status") != "OK":
+        raise RuntimeError(f"Error fetching dataset list: {data.get('alert')}")
+    return data["datasetlist"]
+
+
+def load_metadata():
+    """Load previously saved session→dataset_hash map, or return an empty dict."""
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def save_metadata(metadata):
+    """Persist our session→dataset_hash map for next run."""
+    with open(METADATA_FILE, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+def filter_for_target_years(datasets):
+    """Keep only entries where either year_start or year_end matches our TARGET_YEARS."""
+    return [d for d in datasets
+            if d.get("year_start") in TARGET_YEARS or d.get("year_end") in TARGET_YEARS]
+
+
+def download_dataset(entry):
+    """
+    Calls getDataset to fetch the Base64-encoded ZIP for one session,
+    decodes it, and writes to disk. Returns the path to the ZIP.
+    """
+    sid = entry["session_id"]
+    akey = entry["access_key"]
+    year_start = entry["year_start"]
+    year_end   = entry["year_end"]
+    url = f"https://api.legiscan.com/?key={API_KEY}&op=getDataset&id={sid}&access_key={akey}"
+    resp = requests.get(url)
+    data = resp.json()
+    if data.get("status") != "OK":
+        print(f"  ↳ Error downloading session {sid}: {data.get('alert')}")
+        return None
+
+    # Decode and save ZIP
+    zip_bytes = base64.b64decode(data["dataset"]["zip"])
+    session_dir = os.path.join(OUTPUT_DIR, f"{year_start}_{year_end}", STATE)
+    os.makedirs(session_dir, exist_ok=True)
+    zip_name = f"{year_start}-{year_end}_Regular_Session.zip"
+    zip_path = os.path.join(session_dir, zip_name)
+    with open(zip_path, "wb") as fp:
+        fp.write(zip_bytes)
+    print(f"  ↳ Saved dataset ZIP: {zip_path}")
+    return zip_path
+
+
+def extract_records(zip_path):
+    """
+    Extracts a ZIP archive to a folder of the same name minus '.zip',
+    reads all JSON files under the 'bill/' subfolder,
+    and returns a DataFrame of flattened records.
+    """
+    extract_dir = zip_path[:-4]
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(extract_dir)
+
+    bill_dir = os.path.join(extract_dir, 'bill')
+    records = []
+    for fname in os.listdir(bill_dir):
+        if fname.lower().endswith('.json'):
+            with open(os.path.join(bill_dir, fname)) as f:
+                data = json.load(f)
+            records.append(data)
+
+    if not records:
+        print(f"No JSON bill files found in {bill_dir}")
+        return None
+
+    # Normalize nested JSON into flat table
+    return pd.json_normalize(records)
+
+
+def sync_and_combine():
+    """
+    Fetches any new snapshots, downloads and validates them,
+    then loads all existing ZIPs for TARGET_YEARS, extracts bills,
+    and writes a single combined CSV file.
+    """
+    print("=== Starting sync & combine job ===")
+
+    # 1. Sync any new data
+    datasets = fetch_dataset_list(STATE)
+    targets = filter_for_target_years(datasets)
+    meta = load_metadata()
+    updated = False
+
+    for entry in targets:
+        sid = str(entry["session_id"])
+        new_hash    = entry["dataset_hash"]
+        year_start  = entry["year_start"]
+        year_end    = entry["year_end"]
+
+        if meta.get(sid) != new_hash:
+            print(f"* New snapshot for session {sid} ({year_start}-{year_end}) detected.")
+            zip_path = download_dataset(entry)
+            if not zip_path:
+                continue
+            # Quick validation: ensure ZIP has JSON files
+            with zipfile.ZipFile(zip_path) as zf:
+                if not any(name.lower().endswith('.json') for name in zf.namelist()):
+                    print(f"Validation failed: no JSON inside {zip_path}")
+                    continue
+            meta[sid] = new_hash
+            updated = True
+
+    if updated:
+        save_metadata(meta)
+        print("Metadata updated.")
+    else:
+        print("No new data; nothing to download.")
+
+    # 2. Combine all bills from existing ZIPs into one CSV
+    all_dfs = []
+    for entry in targets:
+        year_start = entry["year_start"]
+        year_end   = entry["year_end"]
+        zip_name   = f"{year_start}-{year_end}_Regular_Session.zip"
+        zip_path   = os.path.join(OUTPUT_DIR, f"{year_start}_{year_end}", STATE, zip_name)
+        if os.path.exists(zip_path):
+            df = extract_records(zip_path)
+            if df is not None:
+                all_dfs.append(df)
+        else:
+            print(f"ZIP not found for session {year_start}-{year_end}: expected at {zip_path}")
+
+    if all_dfs:
+        combined = pd.concat(all_dfs, ignore_index=True)
+        combined_name = f"{STATE}_{TARGET_YEARS[0]}_{TARGET_YEARS[-1]}_all_bills.csv"
+        out_csv = os.path.join(OUTPUT_DIR, combined_name)
+        combined.to_csv(out_csv, index=False)
+        print(f"Combined all bills CSV written to: {out_csv}")
+    else:
+        print("No bill records to combine.")
+
+
+if __name__ == "__main__":
+    sync_and_combine()
