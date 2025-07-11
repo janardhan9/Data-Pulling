@@ -3,68 +3,51 @@ import json
 import pandas as pd
 
 # ─── Configuration ──────────────────────────────────────────────────────────
-BASE_DIR     = "datasets"          # Root of your downloaded/extracted data
-STATE        = "LA"                # State subfolder label
-TARGET_YEARS = []                   # e.g., ["2025", "2026"] to process specific years; empty = all years
+# Set BASE_DIR to your folder containing all JSON files (recursively).
+BASE_DIR = r"C:\Users\janardhan.kurva\OneDrive - Cotiviti\Project_test_envimt_LA_bills"
+# Output CSV filename
+OUTPUT_CSV = os.path.join(BASE_DIR, "LA_bills.csv")
 # ─────────────────────────────────────────────────────────────────────────────
 
-def find_bill_directories():
+def find_json_files(base_dir):
     """
-    Walks through BASE_DIR/{session}/{STATE}/{session_folder}/bill directories.
-    Returns a list of paths to each 'bill' directory.
+    Recursively walk through base_dir and yield paths to all .json files.
     """
-    bill_dirs = []
-    if not os.path.isdir(BASE_DIR):
-        print(f"Base directory not found: {BASE_DIR}")
-        return bill_dirs
-
-    for session in os.listdir(BASE_DIR):
-        if TARGET_YEARS and session not in TARGET_YEARS:
-            continue
-        state_dir = os.path.join(BASE_DIR, session, STATE)
-        if not os.path.isdir(state_dir):
-            continue
-        for sub in os.listdir(state_dir):
-            bill_path = os.path.join(state_dir, sub, 'bill')
-            if os.path.isdir(bill_path):
-                print(f"Found bill directory: {bill_path}")
-                bill_dirs.append(bill_path)
-    return bill_dirs
+    for root, dirs, files in os.walk(base_dir):
+        for fname in files:
+            if fname.lower().endswith('.json'):
+                yield os.path.join(root, fname)
 
 
 def main():
-    print("=== Starting JSON-to-CSV combine for all bills ===")
-    bill_dirs = find_bill_directories()
-    if not bill_dirs:
-        print("No bill directories found. Check BASE_DIR, STATE, or TARGET_YEARS.")
+    print(f"Scanning for JSON files under: {BASE_DIR}")
+    json_paths = list(find_json_files(BASE_DIR))
+    if not json_paths:
+        print("No JSON files found. Please check BASE_DIR path.")
         return
+    print(f"Found {len(json_paths)} JSON files. Loading records...")
 
     records = []
-    for bill_dir in bill_dirs:
-        for fname in os.listdir(bill_dir):
-            if fname.lower().endswith('.json'):
-                file_path = os.path.join(bill_dir, fname)
-                try:
-                    with open(file_path, 'r') as f:
-                        data = json.load(f)
-                    records.append(data)
-                except Exception as e:
-                    print(f"Error reading {file_path}: {e}")
+    for path in json_paths:
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                records.append(json.load(f))
+        except Exception as e:
+            print(f"Error reading {path}: {e}")
 
     if not records:
-        print("No JSON bill files found in any bill directories.")
+        print("No valid JSON records to process.")
         return
 
     # Flatten nested JSON into a flat DataFrame
     df = pd.json_normalize(records)
 
-    # Write to a single combined CSV
-    output_csv = os.path.join(BASE_DIR, f"{STATE}_bills.csv")
+    # Write combined DataFrame to CSV
     try:
-        df.to_csv(output_csv, index=False)
-        print(f"Combined CSV created at: {output_csv}")
+        df.to_csv(OUTPUT_CSV, index=False)
+        print(f"Combined CSV created at: {OUTPUT_CSV}")
     except Exception as e:
-        print(f"Failed to write combined CSV: {e}")
+        print(f"Failed to write CSV: {e}")
 
 if __name__ == '__main__':
     main()
