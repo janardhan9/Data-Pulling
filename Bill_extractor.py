@@ -1,3 +1,5 @@
+import urllib3
+import ssl
 import requests
 import time
 import json
@@ -9,6 +11,8 @@ from functools import wraps
 from config import *
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ssl._create_default_https_context = ssl._create_unverified_context
 
 def retry_on_failure(max_retries=MAX_RETRIES, delay=RETRY_DELAY):
     """Decorator for retrying failed API requests"""
@@ -77,6 +81,7 @@ class LegiScanAPI:
         self.api_key = api_key
         self.base_url = BASE_URL
         self.session = requests.Session()
+        self.session.verify= False
         self.cache = ProductionCache() if USE_CACHING else None
         self.request_count = 0
         self.failed_requests = 0
@@ -189,9 +194,8 @@ class LegiScanAPI:
             'failed_requests': self.failed_requests,
             'success_rate': (self.request_count - self.failed_requests) / max(self.request_count, 1) * 100
         }
-    # Add these imports at the top if not already present
 
-# Add these new methods to your LegiScanAPI class
+
 
     def search_temporal_segments(self, query):
         """Search keyword across time segments with parallel processing"""
@@ -278,4 +282,3 @@ class LegiScanAPI:
             self.cache.save_to_cache(cache_key, all_bills)
         
         return all_bills
-
