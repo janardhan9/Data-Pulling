@@ -2,12 +2,24 @@ import os
 from datetime import datetime
 
 # API Configuration
-API_KEY = "33d6eb6c0ee4b59e5cfb7d95eaf141e3"  # Keep your actual API key
+API_KEY = "ee677b253411d702f9b39f2731dff7b7"  # Keep your actual API key
 BASE_URL = "https://api.legiscan.com/"
 
 # Search Keywords
 KEYWORDS = [
-    'Prior authorization'
+    'Prior authorization',
+    'Utilization review',
+    'Utilization management',
+    'Medical necessity review',
+    'Prompt pay',
+    'Prompt payment',
+    'Clean claims',
+    'Clean claim',
+    'Coordination of benefits',
+    'Artificial intelligence',
+    'Clinical decision support',
+    'Automated decision making',
+    'Automate decision support'
 ]
 
 # Target Years
@@ -114,7 +126,7 @@ STATE_MAPPING = {
 }
 '''
 
-,
+
     'Utilization review',
     'Utilization management',
     'Medical necessity review',
