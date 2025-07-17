@@ -1,3 +1,110 @@
+#sample 
+
+import json
+import os
+from datetime import datetime
+from config import *
+
+def create_sample_dataset():
+    """Create a sample dataset for testing the system"""
+    
+    # Sample healthcare bills data
+    sample_bills = [
+        {
+            "bill_id": "2025001",
+            "title": "Prior authorization reform for healthcare services",
+            "description": "A bill to reform prior authorization requirements for medical services",
+            "state": "CA",
+            "bill_number": "AB1234",
+            "session": {"year_start": 2025},
+            "status": 1,
+            "sponsors": [
+                {
+                    "name": "John Smith",
+                    "role": "Rep", 
+                    "sponsor_order": 1
+                }
+            ],
+            "history": [
+                {
+                    "date": "2025-01-15",
+                    "action": "Introduced in Assembly"
+                }
+            ],
+            "url": "https://legiscan.com/CA/bill/AB1234/2025"
+        },
+        {
+            "bill_id": "2025002", 
+            "title": "Artificial intelligence in healthcare regulation",
+            "description": "Establishing guidelines for AI use in medical diagnosis",
+            "state": "NY",
+            "bill_number": "S567",
+            "session": {"year_start": 2025},
+            "status": 2,
+            "sponsors": [
+                {
+                    "name": "Mary Johnson",
+                    "role": "Rep",
+                    "sponsor_order": 1
+                }
+            ],
+            "history": [
+                {
+                    "date": "2025-01-20",
+                    "action": "Passed Senate Committee"
+                }
+            ],
+            "url": "https://legiscan.com/NY/bill/S567/2025"
+        },
+        {
+            "bill_id": "2025003",
+            "title": "Clean claims processing requirements",
+            "description": "Standards for electronic health insurance claim processing",
+            "state": "TX", 
+            "bill_number": "HB890",
+            "session": {"year_start": 2025},
+            "status": 1,
+            "sponsors": [
+                {
+                    "name": "Robert Davis",
+                    "role": "Rep",
+                    "sponsor_order": 1
+                }
+            ],
+            "history": [
+                {
+                    "date": "2025-01-25",
+                    "action": "Filed with Secretary of State"
+                }
+            ],
+            "url": "https://legiscan.com/TX/bill/HB890/2025"
+        }
+    ]
+    
+    # Create sample dataset structure
+    sample_dataset = {
+        "date": "2025-01-28",
+        "total_bills": len(sample_bills),
+        "bills": sample_bills
+    }
+    
+    # Save sample dataset
+    os.makedirs(DATASETS_DIR, exist_ok=True)
+    sample_file = os.path.join(DATASETS_DIR, "2025-01-28-legiscan.json")
+    
+    with open(sample_file, 'w') as f:
+        json.dump(sample_dataset, f, indent=2)
+    
+    print(f"✅ Created sample dataset: {sample_file}")
+    print(f"📊 Contains {len(sample_bills)} sample healthcare bills")
+    print("🧪 You can now test the system with: python main.py")
+
+if __name__ == "__main__":
+    print("Creating sample dataset for testing...")
+    create_sample_dataset()
+
+
+
 
 #config.py
 
