@@ -85,6 +85,24 @@ class LegiScanAPI:
         self.cache = ProductionCache() if USE_CACHING else None
         self.request_count = 0
         self.failed_requests = 0
+        self.bill_details_cache = {}
+    def get_bill_details(self, bill_id):
+        """Get detailed bill information with global caching"""
+        if not bill_id:
+            logging.warning("Empty bill_id provided to get_bill_details")
+            return None
+        
+        # Check global cache first
+        if bill_id in self.bill_details_cache:
+            return self.bill_details_cache[bill_id]
+        
+        # Get from API if not cached
+        params = {'id': bill_id}
+        result = self._make_request('getBill', params)
+        
+        # Cache the result
+        self.bill_details_cache[bill_id] = result
+        return result
         
     @retry_on_failure()
     def _make_request(self, operation, params=None):
@@ -163,14 +181,7 @@ class LegiScanAPI:
         params = {'id': bill_id}
         return self._make_request('getBill', params)
     
-    def get_person_details(self, people_id):
-        """Get sponsor information"""
-        if not people_id:
-            logging.warning("Empty people_id provided to get_person_details")
-            return None
-            
-        params = {'id': people_id}
-        return self._make_request('getPerson', params)
+   
     
     def get_sessions_by_year(self, year):
         """Get all sessions for a specific year"""
