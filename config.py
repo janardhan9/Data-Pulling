@@ -124,22 +124,4 @@ STATE_MAPPING = {
     'DC': 'District of Columbia',
     'US': 'United States'
 }
-'''
 
-
-    'Utilization review',
-    'Utilization management',
-    'Medical necessity review',
-    'Prompt pay',
-    'Prompt payment',
-    'Clean claims',
-    'Clean claim',
-    'Coordination of benefits',
-    'Artificial intelligence',
-    'Clinical decision support',
-    'Automated decision making',
-    'Automate decision support'
-
-
-
-'''
