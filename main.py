@@ -36,37 +36,39 @@ def setup_logging():
 
 
 def process_single_keyword(api, processor, keyword):
-         """Process a single keyword with comprehensive temporal search"""
+    
+    """Process a single keyword with bill ID deduplication"""
     logging.info(f"Searching comprehensively for keyword: {keyword}")
     
     keyword_bills = 0
     
-    # Use comprehensive temporal search instead of standard search
+    # Use comprehensive temporal search
     all_bill_results = api.search_bills_comprehensive(keyword)
     
     if not all_bill_results:
         logging.warning(f"No results found for keyword: {keyword}")
         return {'keyword': keyword, 'count': 0, 'error': 'No results found'}
     
-    # Extract bill IDs
-    bill_ids = [bill.get('bill_id') for bill in all_bill_results if bill.get('bill_id')]
+    # Extract bill IDs and DEDUPLICATE
+    bill_ids_raw = [bill.get('bill_id') for bill in all_bill_results if bill.get('bill_id')]
+    bill_ids = list(set(bill_ids_raw))  # Remove duplicates with set()
     
-    # ADD PROGRESS INDICATORS
-    print(f"  📋 Processing {len(bill_ids)} bill details...")
+    # Show deduplication impact
+    duplicates_removed = len(bill_ids_raw) - len(bill_ids)
+    print(f"  📋 Processing {len(bill_ids)} unique bills ({duplicates_removed} duplicates removed)")
+    
+    # Process unique bills in batches
     total_batches = (len(bill_ids) + BATCH_SIZE - 1) // BATCH_SIZE
     
-    # Process bills in parallel batches
     for i in range(0, len(bill_ids), BATCH_SIZE):
         batch = bill_ids[i:i + BATCH_SIZE]
         current_batch = (i // BATCH_SIZE) + 1
         
-        # SHOW PROGRESS
         print(f"  📊 Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
         
         try:
             processed_bills = processor.process_bills_batch_parallel(batch, api)
             
-            # Add valid bills to processor
             for bill in processed_bills:
                 if bill:
                     is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
@@ -80,6 +82,7 @@ def process_single_keyword(api, processor, keyword):
     
     print(f"  ✅ Completed processing {keyword_bills} bills")
     return {'keyword': keyword, 'count': keyword_bills, 'error': None}
+
 
 def main():
     """Main extraction workflow (optimized for production)"""
