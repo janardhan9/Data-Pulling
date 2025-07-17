@@ -567,3 +567,161 @@ if __name__ == "__main__":
         print("   This is normal - datasets will be added in the next step")
     
     print("\nDataset loader ready!")
+
+
+#main.py
+
+
+import time
+import logging
+from datetime import datetime
+
+# Corporate environment SSL bypass
+import urllib3
+import ssl
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ssl._create_default_https_context = ssl._create_unverified_context
+
+from config import *
+from dataset_manager import DatasetManager
+from dataset_loader import DatasetLoader
+from bill_processor import BillProcessor
+
+def setup_logging():
+    """Setup logging configuration"""
+    import os
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL),
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler()
+        ]
+    )
+
+def process_single_keyword(loader, processor, keyword):
+    """Process a single healthcare keyword"""
+    logging.info(f"Processing keyword: {keyword}")
+    
+    # Search for bills containing this keyword
+    matching_bills = loader.search_bills_comprehensive(keyword)
+    
+    if not matching_bills:
+        logging.warning(f"No bills found for keyword: {keyword}")
+        return {'keyword': keyword, 'count': 0, 'error': 'No bills found'}
+    
+    # Process each bill
+    processed_count = 0
+    for bill in matching_bills:
+        processed_bill = processor.process_bill_data(bill)
+        if processed_bill:
+            processor.add_bill(processed_bill)
+            processed_count += 1
+    
+    return {'keyword': keyword, 'count': processed_count, 'error': None}
+
+def main():
+    """Main healthcare bills extraction workflow"""
+    start_time = time.time()
+    
+    print("=" * 70)
+    print("HEALTHCARE BILLS DATASET EXTRACTION SYSTEM")
+    print("=" * 70)
+    
+    setup_logging()
+    logging.info("Starting healthcare bills extraction from datasets")
+    
+    # Initialize components
+    dataset_manager = DatasetManager()
+    dataset_loader = DatasetLoader()
+    bill_processor = BillProcessor()
+    
+    # Check available datasets
+    available_datasets = dataset_manager.get_available_datasets()
+    if not available_datasets:
+        print("❌ No datasets found!")
+        print("   Please download datasets from https://legiscan.com/datasets")
+        print("   Save them in the 'datasets/' folder with format: YYYY-MM-DD-legiscan.json")
+        return
+    
+    print(f"📂 Found {len(available_datasets)} datasets")
+    print(f"🔍 Processing {len(KEYWORDS)} healthcare keywords...")
+    print(f"📅 Target years: {TARGET_YEARS}")
+    print("-" * 70)
+    
+    # Process each healthcare keyword
+    search_results_summary = {}
+    
+    for i, keyword in enumerate(KEYWORDS, 1):
+        print(f"[{i}/{len(KEYWORDS)}] Processing: '{keyword}'")
+        
+        try:
+            result = process_single_keyword(dataset_loader, bill_processor, keyword)
+            search_results_summary[keyword] = result['count']
+            
+            if result['error']:
+                print(f"   ⚠️  {result['error']}")
+            else:
+                print(f"   ✅ Found {result['count']} bills")
+                
+        except Exception as e:
+            print(f"   ❌ Error processing '{keyword}': {e}")
+            logging.error(f"Error processing keyword {keyword}: {e}")
+            search_results_summary[keyword] = 0
+    
+    # Calculate processing time
+    processing_time = time.time() - start_time
+    
+    print("=" * 70)
+    print("EXTRACTION COMPLETE")
+    print("=" * 70)
+    
+    # Show comprehensive summary
+    total_bills = len(bill_processor.processed_bills)
+    print(f"📊 Total bills found: {total_bills}")
+    print(f"⏱️  Processing time: {processing_time:.2f} seconds ({processing_time/60:.1f} minutes)")
+    print(f"📈 Summary: {bill_processor.get_summary()}")
+    
+    # Show processing statistics
+    processing_stats = bill_processor.get_processing_stats()
+    
+    print(f"\n📋 Processing Statistics:")
+    print(f"   Bills processed: {processing_stats['successful']}")
+    print(f"   Processing failures: {processing_stats['failed']}")
+    print(f"   Duplicates removed: {processing_stats['duplicates_removed']}")
+    
+    # Show keyword breakdown
+    print(f"\n🔍 Keyword Breakdown:")
+    for keyword, count in search_results_summary.items():
+        print(f"   • {keyword}: {count} bills")
+    
+    # Save results to Excel
+    if total_bills > 0:
+        print(f"\n💾 Saving results to Excel...")
+        bill_processor.save_to_excel()
+        
+        # Calculate processing rate
+        if processing_time > 0:
+            rate = total_bills / processing_time
+            print(f"📊 Processing rate: {rate:.2f} bills/second")
+        
+        print(f"\n✅ Extraction complete! Results saved to: {OUTPUT_FILE}")
+    else:
+        print(f"\n⚠️  No bills found matching your healthcare keywords")
+        print("   Check that your datasets contain 2025-2026 data")
+    
+    print(f"📝 Logs saved to: {LOG_FILE}")
+    logging.info(f"Extraction complete. Total bills: {total_bills}, Time: {processing_time:.2f}s")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Extraction interrupted by user.")
+        logging.info("Extraction interrupted by user")
+    except Exception as e:
+        print(f"\n\n❌ Unexpected error: {e}")
+        logging.error(f"Unexpected error: {e}")
+        raise
