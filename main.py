@@ -36,7 +36,7 @@ def setup_logging():
 
 
 def process_single_keyword(api, processor, keyword):
-    """Process a single keyword with comprehensive temporal search"""
+         """Process a single keyword with comprehensive temporal search"""
     logging.info(f"Searching comprehensively for keyword: {keyword}")
     
     keyword_bills = 0
@@ -48,27 +48,37 @@ def process_single_keyword(api, processor, keyword):
         logging.warning(f"No results found for keyword: {keyword}")
         return {'keyword': keyword, 'count': 0, 'error': 'No results found'}
     
-    #print(f"  📄 Found {len(all_bill_results)} total bills for '{keyword}' (comprehensive)")
-    
     # Extract bill IDs
     bill_ids = [bill.get('bill_id') for bill in all_bill_results if bill.get('bill_id')]
+    
+    # ADD PROGRESS INDICATORS
+    print(f"  📋 Processing {len(bill_ids)} bill details...")
+    total_batches = (len(bill_ids) + BATCH_SIZE - 1) // BATCH_SIZE
     
     # Process bills in parallel batches
     for i in range(0, len(bill_ids), BATCH_SIZE):
         batch = bill_ids[i:i + BATCH_SIZE]
+        current_batch = (i // BATCH_SIZE) + 1
         
-        # Use parallel processing instead of standard batch processing
-        processed_bills = processor.process_bills_batch_parallel(batch, api)
+        # SHOW PROGRESS
+        print(f"  📊 Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
         
-        # Add valid bills to processor
-        for bill in processed_bills:
-            if bill:
-                # Double-check keyword match
-                is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
-                if is_match:
-                    processor.add_bill(bill)
-                    keyword_bills += 1
+        try:
+            processed_bills = processor.process_bills_batch_parallel(batch, api)
+            
+            # Add valid bills to processor
+            for bill in processed_bills:
+                if bill:
+                    is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
+                    if is_match:
+                        processor.add_bill(bill)
+                        keyword_bills += 1
+                        
+        except Exception as e:
+            print(f"  ❌ Error processing batch {current_batch}: {e}")
+            logging.error(f"Error processing batch {current_batch}: {e}")
     
+    print(f"  ✅ Completed processing {keyword_bills} bills")
     return {'keyword': keyword, 'count': keyword_bills, 'error': None}
 
 def main():
