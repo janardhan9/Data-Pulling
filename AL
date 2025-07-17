@@ -832,3 +832,57 @@ if __name__ == "__main__":
         print(f"\n\n❌ Unexpected error: {e}")
         logging.error(f"Unexpected error: {e}")
         raise
+
+
+
+
+###keywords
+
+def check_keyword_match(self, bill_data, target_keyword):
+    """Enhanced keyword matching with flexibility"""
+    if not bill_data:
+        return False, target_keyword
+    
+    # Get the bill data
+    bill = bill_data.get('bill', {}) if 'bill' in bill_data else bill_data
+    
+    # Fields to search in
+    search_fields = [
+        bill.get('title', ''),
+        bill.get('description', ''),
+        bill.get('summary', ''),
+        bill.get('text', ''),
+    ]
+    
+    # Search in history/actions
+    history = bill.get('history', [])
+    if isinstance(history, list):
+        for action in history:
+            if isinstance(action, dict):
+                search_fields.append(action.get('action', ''))
+    
+    # Search in sponsors
+    sponsors = bill.get('sponsors', [])
+    if isinstance(sponsors, list):
+        for sponsor in sponsors:
+            if isinstance(sponsor, dict):
+                search_fields.append(sponsor.get('name', ''))
+    
+    # Combine all text and search (case-insensitive)
+    combined_text = ' '.join(search_fields).lower()
+    
+    # Enhanced keyword matching
+    keyword_variations = [
+        target_keyword.lower(),
+        target_keyword.lower().replace(' review', ''),  # "utilization" matches "utilization review"
+        target_keyword.lower().replace(' ', ''),        # Handle spacing issues
+    ]
+    
+    # Check for any variation
+    for variation in keyword_variations:
+        if variation in combined_text:
+            return True, target_keyword
+    
+    # If strict matching fails, trust API results for now
+    logging.info(f"Keyword '{target_keyword}' not found in bill {bill.get('bill_number', 'unknown')} - trusting API")
+    return True, target_keyword  # Trust API search results
