@@ -87,8 +87,9 @@ class BillProcessor:
                 'Bill Title/Topic': bill.get('title', ''),
                 'Summary': bill.get('description', ''),
                 'Sponsors': self.extract_sponsors(bill.get('sponsors', []), api_handler),
-                'Last Action': self.extract_last_action(bill.get('history', [])),  # No date included
-                'Bill Link': bill.get('url', ''),
+                'Last Action': self.extract_last_action(bill.get('history', [])),
+                'Bill Link': self.get_state_bill_link(bill)# No date included
+                #'Bill Link': bill.get('url', ''),
                 'Current Status': STATUS_MAPPING.get(bill.get('status'), 'Unknown'),
                 'Extracted Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
@@ -152,9 +153,62 @@ class BillProcessor:
             return None
 
     def check_keyword_match(self, bill_data, target_keyword):
-        """Simplified - trust API search results"""
-        #print(f"    DEBUG: ✅ Trusting API search results for '{target_keyword}'")
-        return True, target_keyword
+        """Verify keyword actually appears in bill content"""
+        if not bill_data:
+            return False, target_keyword
+        
+        # Get the bill data
+        bill = bill_data.get('bill', {}) if 'bill' in bill_data else bill_data
+        
+        # Fields to search in
+        search_fields = [
+            bill.get('title', ''),
+            bill.get('description', ''),
+            bill.get('summary', ''),
+            bill.get('text', ''),  # Full bill text if available
+        ]
+        
+        # Also search in history/actions
+        history = bill.get('history', [])
+        if isinstance(history, list):
+            for action in history:
+                if isinstance(action, dict):
+                    search_fields.append(action.get('action', ''))
+        
+        # Search in sponsor information
+        sponsors = bill.get('sponsors', [])
+        if isinstance(sponsors, list):
+            for sponsor in sponsors:
+                if isinstance(sponsor, dict):
+                    search_fields.append(sponsor.get('name', ''))
+        
+        # Combine all text and search (case-insensitive)
+        combined_text = ' '.join(search_fields).lower()
+        keyword_lower = target_keyword.lower()
+        
+        # Check for keyword match
+        if keyword_lower in combined_text:
+            return True, target_keyword
+        else:
+            # Log non-matches for debugging
+            logging.warning(f"Keyword '{target_keyword}' not found in bill {bill.get('bill_number', 'unknown')}")
+            return False, target_keyword
+
+    def get_state_bill_link(self, bill):
+        """Extract state bill link instead of LegiScan link"""
+        # Try state_link first
+        state_link = bill.get('state_link', '')
+        if state_link:
+            return state_link
+        
+        # Try state_url
+        state_url = bill.get('state_url', '')
+        if state_url:
+            return state_url
+        
+        # Fallback to LegiScan URL if no state link
+        return bill.get('url', 'No link available')
+
     
     def add_bill(self, processed_bill):
         """Add a processed bill to the collection"""
