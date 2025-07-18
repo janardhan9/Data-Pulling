@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 # API Configuration
-API_KEY = "ee677b253411d702f9b39f2731dff7b7"  # Keep your actual API key
+API_KEY = "d39580082926ca46d23b481e7806b26e"  # Keep your actual API key
 BASE_URL = "https://api.legiscan.com/"
 
 # Search Keywords
@@ -124,4 +124,3 @@ STATE_MAPPING = {
     'DC': 'District of Columbia',
     'US': 'United States'
 }
-
