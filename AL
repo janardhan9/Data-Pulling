@@ -1,3 +1,97 @@
+25-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:48,917 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:48,917 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:48,917 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+  📊 Batch 2/3 - Processing 20 bills...
+2025-07-17 18:42:50,241 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,242 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,242 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+  📊 Batch 3/3 - Processing 11 bills...
+2025-07-17 18:42:51,201 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,202 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,202 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,202 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,203 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,203 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,203 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,204 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,204 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,204 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+2025-07-17 18:42:51,205 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
+  ✅ Completed processing 51 bills
+============================================================
+EXTRACTION COMPLETE
+============================================================
+Total bills found: 16572
+Processing time: 3875.63 seconds (64.6 minutes)
+Processor summary: Total Bills: 16572 | States: 51 | Years: [2025]
+
+Performance Statistics:
+  API requests: 17682
+  API success rate: 100.0%
+  Bills processed: 16572
+  Processing failures: 0
+  Duplicates removed: 0
+
+Keyword Breakdown:
+  • Prior authorization: 1877 bills
+  • Utilization review: 1836 bills
+  • Utilization management: 1870 bills
+  • Medical necessity review: 1307 bills
+  • Prompt pay: 989 bills
+  • Prompt payment: 1078 bills
+  • Clean claims: 1023 bills
+  • Clean claim: 1023 bills
+  • Coordination of benefits: 1910 bills
+  • Artificial intelligence: 1163 bills
+  • Clinical decision support: 1500 bills
+  • Automated decision making: 945 bills
+  • Automate decision support: 51 bills
+
+Saving results to Excel...
+2025-07-17 18:42:51,626 - ERROR - Failed to save Excel file: [Errno 13] Permission denied: 'data/bills_output.xlsx'
+Error saving Excel file: [Errno 13] Permission denied: 'data/bills_output.xlsx'
+
+Processing rate: 4.28 bills/second
+
+Extraction complete! Check your results in: data/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #sample 
 
 import json
