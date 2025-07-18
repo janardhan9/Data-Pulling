@@ -1,3 +1,37 @@
+2025-07-17 23:48:40,009 - ERROR - API request failed: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=2010899&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:40,010 - WARNING - Attempt 2 failed, retrying in 2s: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=2010899&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:40,415 - ERROR - API request failed: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1969938&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:40,416 - WARNING - Attempt 2 failed, retrying in 2s: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1969938&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:41,620 - ERROR - API request failed: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1904408&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:41,621 - WARNING - Attempt 1 failed, retrying in 1s: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1904408&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:47,507 - ERROR - API request failed: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1904395&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:47,507 - ERROR - API request failed: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=2010899&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:47,508 - ERROR - API request failed after 3 attempts: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1904395&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:47,508 - ERROR - API request failed after 3 attempts: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=2010899&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:47,509 - ERROR - Failed to process bill 1904395: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=1904395&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-17 23:48:47,509 - ERROR - Failed to process bill 2010899: HTTPSConnectionPool(host='api.legiscan.com', port=443): Max retries exceeded with url: /?id=2010899&key=65adb82728e0ba40cd3d99db4080841d&op=getBill (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))
+2025-07-18 01:17:40,961 - INFO - Starting optimized bill extraction process
+2025-07-18 01:17:40,979 - INFO - Searching comprehensively for keyword: Prior authorization
+2025-07-18 01:17:40,980 - INFO - Starting comprehensive temporal search for: Prior aut
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def process_single_keyword(api, processor, keyword):
     """Process a single keyword with STRICT keyword verification"""
     logging.info(f"Searching comprehensively for keyword: {keyword}")
