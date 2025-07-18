@@ -1,3 +1,21 @@
+
+
+
+
+
+#config.py
+
+
+import os
+
+# Read OPENSTATES_API_KEY from environment
+OPENSTATES_API_KEY = os.getenv("OPENSTATES_API_KEY")
+if not OPENSTATES_API_KEY:
+    raise ValueError("Please set the OPENSTATES_API_KEY environment variable.")
+
+
+#################################################################
+
 # extract.py 
 
 #################################################################
