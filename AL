@@ -1,85 +1,57 @@
-25-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:48,916 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:48,917 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:48,917 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:48,917 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-  📊 Batch 2/3 - Processing 20 bills...
-2025-07-17 18:42:50,241 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,242 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,242 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,243 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,244 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,245 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:50,246 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-  📊 Batch 3/3 - Processing 11 bills...
-2025-07-17 18:42:51,201 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,202 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,202 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,202 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,203 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,203 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,203 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,204 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,204 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,204 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-2025-07-17 18:42:51,205 - INFO - Keyword 'Automate decision support' not found in bill unknown - trusting API
-  ✅ Completed processing 51 bills
-============================================================
-EXTRACTION COMPLETE
-============================================================
-Total bills found: 16572
-Processing time: 3875.63 seconds (64.6 minutes)
-Processor summary: Total Bills: 16572 | States: 51 | Years: [2025]
-
-Performance Statistics:
-  API requests: 17682
-  API success rate: 100.0%
-  Bills processed: 16572
-  Processing failures: 0
-  Duplicates removed: 0
-
-Keyword Breakdown:
-  • Prior authorization: 1877 bills
-  • Utilization review: 1836 bills
-  • Utilization management: 1870 bills
-  • Medical necessity review: 1307 bills
-  • Prompt pay: 989 bills
-  • Prompt payment: 1078 bills
-  • Clean claims: 1023 bills
-  • Clean claim: 1023 bills
-  • Coordination of benefits: 1910 bills
-  • Artificial intelligence: 1163 bills
-  • Clinical decision support: 1500 bills
-  • Automated decision making: 945 bills
-  • Automate decision support: 51 bills
-
-Saving results to Excel...
-2025-07-17 18:42:51,626 - ERROR - Failed to save Excel file: [Errno 13] Permission denied: 'data/bills_output.xlsx'
-Error saving Excel file: [Errno 13] Permission denied: 'data/bills_output.xlsx'
-
-Processing rate: 4.28 bills/second
-
-Extraction complete! Check your results in: data/
-
-
-
-
-
+def process_single_keyword(api, processor, keyword):
+    """Process a single keyword with STRICT keyword verification"""
+    logging.info(f"Searching comprehensively for keyword: {keyword}")
+    
+    keyword_bills = 0
+    
+    # Use comprehensive temporal search
+    all_bill_results = api.search_bills_comprehensive(keyword)
+    
+    if not all_bill_results:
+        logging.warning(f"No results found for keyword: {keyword}")
+        return {'keyword': keyword, 'count': 0, 'error': 'No results found'}
+    
+    # Extract bill IDs and DEDUPLICATE
+    bill_ids_raw = [bill.get('bill_id') for bill in all_bill_results if bill.get('bill_id')]
+    bill_ids = list(set(bill_ids_raw))  # Remove duplicates with set()
+    
+    # Show deduplication impact
+    duplicates_removed = len(bill_ids_raw) - len(bill_ids)
+    print(f"  📋 Processing {len(bill_ids)} unique bills ({duplicates_removed} duplicates removed)")
+    
+    # Process unique bills in batches
+    total_batches = (len(bill_ids) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    for i in range(0, len(bill_ids), BATCH_SIZE):
+        batch = bill_ids[i:i + BATCH_SIZE]
+        current_batch = (i // BATCH_SIZE) + 1
+        
+        print(f"  📊 Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
+        
+        try:
+            # Get raw bill details first
+            processed_bills = processor.process_bills_batch_parallel(batch, api)
+            
+            # ✅ CRITICAL FIX: Strict keyword verification before adding
+            for bill in processed_bills:
+                if bill:
+                    # Check keyword match BEFORE processing into final format
+                    is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
+                    
+                    if is_match:  # ✅ Only process bills with verified keyword matches
+                        # Process into final format only after keyword verification
+                        final_bill = processor.process_bill_data(bill, api)
+                        if final_bill:
+                            processor.add_bill(final_bill)
+                            keyword_bills += 1
+                    # ✅ Bills without keyword matches are silently filtered out
+                        
+        except Exception as e:
+            print(f"  ❌ Error processing batch {current_batch}: {e}")
+            logging.error(f"Error processing batch {current_batch}: {e}")
+    
+    print(f"  ✅ Completed processing {keyword_bills} bills with verified keywords")
+    return {'keyword': keyword, 'count': keyword_bills, 'error': None}
 
 
 
