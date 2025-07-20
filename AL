@@ -1,280 +1,138 @@
+#Config.py
 
 
 
 
-
-#config.py
 
 
 import os
-
-# Read OPENSTATES_API_KEY from environment
-OPENSTATES_API_KEY = os.getenv("OPENSTATES_API_KEY")
-if not OPENSTATES_API_KEY:
-    raise ValueError("Please set the OPENSTATES_API_KEY environment variable.")
-
-
-#################################################################
-
-# extract.py 
-
-#################################################################
-
-
-import sys
-import requests
-import pandas as pd
-import time
 from datetime import datetime
-from config import OPENSTATES_API_KEY
 
+# API Configuration
+API_KEY = "65adb82728e0ba40cd3d99db4080841d"  # Keep your actual API key
+BASE_URL = "https://api.legiscan.com/"
+
+# Search Keywords
 KEYWORDS = [
-    "prior authorization", "utilization review", "utilization management",
-    "medical necessity review", "prompt pay", "prompt payment", "clean claims",
-    "clean claim", "coordination of benefits", "artificial intelligence",
-    "clinical decision support", "automated decision making",
-    "automate decision support"
+    'Prior authorization',
+    'Utilization review',
+    'Utilization management',
+    'Medical necessity review',
+    'Prompt pay',
+    'Prompt payment',
+    'Clean claims',
+    'Clean claim',
+    'Coordination of benefits',
+    'Artificial intelligence',
+    'Clinical decision support',
+    'Automated decision making',
+    'Automate decision support'
 ]
 
-def matches_keywords(bill_text, keywords):
-    """Check if bill text contains any of the specified keywords"""
-    if not bill_text:
-        return False
-    text_to_search = bill_text.lower()
-    return any(keyword.lower() in text_to_search for keyword in keywords)
+# Target Years
+TARGET_YEARS = [2025, 2026]
 
-def get_enhanced_summary(bill):
-    """Extract summary from multiple possible sources"""
-    
-    # Primary summary fields to check
-    summary_fields = [
-        "summary", "abstract", "description", "digest", 
-        "synopsis", "brief", "overview", "purpose"
-    ]
-    
-    # Try each field
-    for field in summary_fields:
-        summary = bill.get(field, "")
-        if summary and len(summary.strip()) > 10:
-            return summary.strip()
-    
-    # Try nested fields
-    extras = bill.get("extras", {})
-    if isinstance(extras, dict):
-        for field in summary_fields:
-            summary = extras.get(field, "")
-            if summary and len(summary.strip()) > 10:
-                return summary.strip()
-    
-    # Extract from actions - look for meaningful descriptions
-    actions = bill.get("actions", [])
-    if actions:
-        for action in actions:
-            action_desc = action.get("description", "")
-            if len(action_desc) > 50 and any(keyword in action_desc.lower() 
-                                           for keyword in ["amend", "create", "establish", "require", "provide"]):
-                return action_desc.strip()
-    
-    # Look for the first "introduced" action
-    if actions:
-        for action in actions:
-            action_desc = action.get("description", "")
-            if "introduced" in action_desc.lower() and len(action_desc) > 30:
-                return action_desc.strip()
-    
-    # Clean title fallback
-    title = bill.get("title", "")
-    if title and len(title) > 20:
-        clean_title = title.replace("An act to", "").replace("A bill to", "").replace("An Act", "").strip()
-        if clean_title:
-            return clean_title
-        return title
-    
-    return "No summary available"
+# Status Code Mapping
+STATUS_MAPPING = {
+    1: "Introduced",
+    2: "Engrossed", 
+    3: "Enrolled",
+    4: "Passed"
+}
 
-def get_bill_abstract(bill):
-    """Extract bill abstract if available"""
-    abstracts = bill.get("abstracts", [])
-    if abstracts:
-        for abstract in abstracts:
-            abstract_text = abstract.get("abstract", "")
-            if abstract_text and len(abstract_text.strip()) > 10:
-                return abstract_text.strip()
-    return ""
+# Output Configuration
+OUTPUT_FILE = "data/bills_output.xlsx"
+LOG_FILE = "logs/extraction.log"
 
-def get_document_link(bill):
-    """Get first document link URL, fallback to openstates URL"""
-    documents = bill.get("documents", [])
-    if documents:
-        for doc in documents:
-            links = doc.get("links", [])
-            if links:
-                doc_url = links[0].get("url", "")
-                if doc_url:
-                    return doc_url
-    
-    return bill.get("openstates_url", "")
+# Production Performance Settings
+REQUEST_DELAY = 0.25  # Reduced from 0.5 seconds
+MAX_RESULTS_PER_KEYWORD = None  # Limit results per keyword for faster processing
+CONCURRENT_WORKERS = 3  # Number of parallel workers
+BATCH_SIZE = 20  # Process bills in batches
+USE_CACHING = True  # Enable caching for faster subsequent runs
+CACHE_DURATION_HOURS = 12  # Cache validity period
 
-def get_current_status(bill):
-    """Get current status using latest_action_description"""
-    latest_action_desc = bill.get("latest_action_description", "")
-    if latest_action_desc:
-        return latest_action_desc
-    
-    actions = bill.get("actions", [])
-    if actions:
-        sorted_actions = sorted(actions, key=lambda x: x.get("date", ""), reverse=True)
-        if sorted_actions:
-            return sorted_actions[0].get("description", "Unknown")
-    
-    return "Unknown"
+# Retry Configuration
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # Initial retry delay in seconds
 
-def get_last_action(bill):
-    """Get last action description only (no date)"""
-    actions = bill.get("actions", [])
-    if actions:
-        last = max(actions, key=lambda a: a.get("date", ""), default={})
-        return last.get("description", "No actions recorded")
-    return "No actions recorded"
+# Logging Configuration
+LOG_LEVEL = "INFO"
+ENABLE_PROGRESS_BAR = True
 
-def fetch_and_filter(state_abbr):
-    """Fetch bills using direct search with proper filtering"""
-    records = []
-    request_count = 0
-    
-    print(f"Starting extraction for {state_abbr}...")
-    
-    for kw in KEYWORDS:
-        if request_count > 0:
-            print(f"Waiting 10 seconds... (request #{request_count + 1})")
-            time.sleep(10)  # Increased from 6 to 10 seconds
-        
-        try:
-            url = "https://v3.openstates.org/bills"
-            headers = {"X-API-KEY": OPENSTATES_API_KEY}
-            params = {
-                "jurisdiction": state_abbr.lower(),
-                "q": kw,
-                "updated_since": "2025-01-01",
-               
-                "include": ["actions", "sponsorships", "sources", "documents", "versions", "votes", "related_bills", "abstracts"]
-                #"include": "actions,sponsorships,sources,documents,versions,votes,related_bills,abstracts"  # FIXED: Comma-separated string
-            }
-            
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            bills_data = response.json()
-            
-            request_count += 1
-            found_bills = bills_data.get("results", [])
-            print(f"✓ API returned {len(found_bills)} bills for keyword '{kw}'")
-            
-            for bill in found_bills:
-                # Extract text for keyword verification
-                title = bill.get("title", "")
-                
-                # Enhanced summary extraction
-                base_summary = get_enhanced_summary(bill)
-                
-                # Get bill abstract
-                abstract_text = get_bill_abstract(bill)
-                
-                # Combine summary with abstract
-                if abstract_text:
-                    summary_final = f"{base_summary} | BillAbstract: {abstract_text}"
-                else:
-                    summary_final = base_summary
-                
-                combined_text = f"{title} {summary_final}"
-                
-                # Verify the bill actually contains our keywords
-                if matches_keywords(combined_text, KEYWORDS):
-                    # Extract session info safely
-                    session_info = bill.get("session", {})
-                    if isinstance(session_info, dict):
-                        session_name = session_info.get("identifier", "")
-                        session_display = session_info.get("name", "")
-                    elif isinstance(session_info, str):
-                        session_name = session_info
-                        session_display = session_info
-                    else:
-                        session_name = "Unknown"
-                        session_display = "2025"
-                    
-                    # Extract year from session name
-                    year = "2025"
-                    if "2025" in session_name or "2025" in session_display:
-                        year = "2025"
-                    elif "2026" in session_name or "2026" in session_display:
-                        year = "2026"
-                    
-                    # Get all required fields
-                    current_status = get_current_status(bill)
-                    last_action = get_last_action(bill)
-                    
-                    sponsorships = bill.get("sponsorships", [])
-                    sponsors = ", ".join(s.get("name", "") for s in sponsorships if s.get("name")) or "No sponsors listed"
+# Add this to your existing config.py file
 
-                    jurisdiction = bill.get("jurisdiction", {})
-                    if isinstance(jurisdiction, dict):
-                        state_name = jurisdiction.get("name", state_abbr)
-                    else:
-                        state_name = state_abbr
-
-                    bill_link = get_document_link(bill)
-
-                    records.append({
-                        "Year": year,
-                        "State": state_name,
-                        "Bill Number": bill.get("identifier", ""),
-                        "Bill Title/Topic": title,
-                        "Summary": summary_final,
-                        "Sponsors": sponsors,
-                        "Last Action": last_action,
-                        "Bill Link": bill_link,
-                        "Current Status": current_status,
-                        "Extracted Date": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                    })
-                    
-        except Exception as e:
-            print(f"Error fetching '{kw}' for {state_abbr}: {e}")
-            continue
-    
-    # Remove duplicates based on Bill Number
-    df = pd.DataFrame(records)
-    if not df.empty:
-        initial_count = len(df)
-        df.drop_duplicates(subset=["Bill Number"], inplace=True)
-        final_count = len(df)
-        print(f"Removed {initial_count - final_count} duplicates")
-    
-    return df
-
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python extract_bills.py <STATE_ABBR>")
-        sys.exit(1)
-    
-    state = sys.argv[1].upper()
-    df = fetch_and_filter(state)
-    
-    if not df.empty:
-        out_file = f"bills_{state}.xlsx"
-        df.to_excel(out_file, index=False)
-        print(f"✓ Extraction complete for {state}: {out_file} ({len(df)} bills found)")
-    else:
-        print(f"✗ No matching bills found for {state}")
+# Temporal segmentation for complete coverage
+TIME_SEGMENTS = [
+    {'start': '2025-01-01', 'end': '2025-03-31', 'label': 'Q1 2025'},
+    {'start': '2025-04-01', 'end': '2025-06-30', 'label': 'Q2 2025'},
+    {'start': '2025-07-01', 'end': '2025-09-30', 'label': 'Q3 2025'},
+    {'start': '2025-10-01', 'end': '2025-12-31', 'label': 'Q4 2025'},
+    {'start': '2026-01-01', 'end': '2026-06-30', 'label': 'H1 2026'},
+    {'start': '2026-07-01', 'end': '2026-12-31', 'label': 'H2 2026'}
+]
 
 
 
+# Parallel processing settings
+MAX_CONCURRENT_SEARCHES = 3  # Time segments processed simultaneously
+MAX_CONCURRENT_BILLS = 5     # Bill details processed simultaneously
 
-
-
-#################################################################
-
-
-
-#combine_and_deduplicate.py
+# State abbreviation to full name mapping
+STATE_MAPPING = {
+    'AL': 'Alabama',
+    'AK': 'Alaska',
+    'AZ': 'Arizona',
+    'AR': 'Arkansas',
+    'CA': 'California',
+    'CO': 'Colorado',
+    'CT': 'Connecticut',
+    'DE': 'Delaware',
+    'FL': 'Florida',
+    'GA': 'Georgia',
+    'HI': 'Hawaii',
+    'ID': 'Idaho',
+    'IL': 'Illinois',
+    'IN': 'Indiana',
+    'IA': 'Iowa',
+    'KS': 'Kansas',
+    'KY': 'Kentucky',
+    'LA': 'Louisiana',
+    'ME': 'Maine',
+    'MD': 'Maryland',
+    'MA': 'Massachusetts',
+    'MI': 'Michigan',
+    'MN': 'Minnesota',
+    'MS': 'Mississippi',
+    'MO': 'Missouri',
+    'MT': 'Montana',
+    'NE': 'Nebraska',
+    'NV': 'Nevada',
+    'NH': 'New Hampshire',
+    'NJ': 'New Jersey',
+    'NM': 'New Mexico',
+    'NY': 'New York',
+    'NC': 'North Carolina',
+    'ND': 'North Dakota',
+    'OH': 'Ohio',
+    'OK': 'Oklahoma',
+    'OR': 'Oregon',
+    'PA': 'Pennsylvania',
+    'RI': 'Rhode Island',
+    'SC': 'South Carolina',
+    'SD': 'South Dakota',
+    'TN': 'Tennessee',
+    'TX': 'Texas',
+    'UT': 'Utah',
+    'VT': 'Vermont',
+    'VA': 'Virginia',
+    'WA': 'Washington',
+    'WV': 'West Virginia',
+    'WI': 'Wisconsin',
+    'WY': 'Wyoming',
+    'DC': 'District of Columbia',
+    'US': 'United States'
+}
 
 
 
@@ -282,563 +140,855 @@ if __name__ == "__main__":
 
 
 
-
-import glob
-import pandas as pd
-from datetime import datetime
-
-def merge_sheets():
-    """Merge all state bill files into one workbook"""
-    files = glob.glob("bills_*.xlsx")
-    if not files:
-        print("No bill files found to merge.")
-        return
-    
-    print(f"Found {len(files)} files to merge: {files}")
-    
-    df_list = []
-    for file in files:
-        try:
-            df = pd.read_excel(file)
-            if not df.empty:
-                df_list.append(df)
-                print(f"Loaded {len(df)} bills from {file}")
-            else:
-                print(f"Skipped empty file: {file}")
-        except Exception as e:
-            print(f"Error loading {file}: {e}")
-    
-    if not df_list:
-        print("No valid data found in any files.")
-        return
-    
-    combined = pd.concat(df_list, ignore_index=True)
-    
-    # Remove duplicates based on Bill Link
-    initial_count = len(combined)
-    combined.drop_duplicates(subset=["Bill Link"], inplace=True)
-    final_count = len(combined)
-    
-    # Sort by State, then by Bill Number
-    combined = combined.sort_values(["State", "Bill Number"])
-    
-    # Save with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = f"all_bills_2025_2026_{timestamp}.xlsx"
-    combined.to_excel(output_file, index=False)
-    
-    print(f"\n✓ Combined workbook saved: {output_file}")
-    print(f"✓ Total bills: {final_count} (removed {initial_count - final_count} duplicates)")
-    print(f"✓ States covered: {len(combined['State'].unique())}")
-    
-    # Show summary by state
-    print("\nBills by state:")
-    state_counts = combined['State'].value_counts()
-    for state, count in state_counts.items():
-        print(f"  {state}: {count} bills")
-
-if __name__ == "__main__":
-    merge_sheets()
-#################################################################
-
-
-
-#scheduler.py
+Bill_extractor.py
 
 
 
 
-import schedule
+import urllib3
+import ssl
+import requests
 import time
-import subprocess
-import sys
-from datetime import datetime
+import json
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+import hashlib
+from functools import wraps
+from config import *
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# All 50 US states + DC + US Territories
-ALL_STATES = [
-    # 50 States + DC
-    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
-    
-    # US Territories
-    "PR",  # Puerto Rico
-    "VI",  # US Virgin Islands
-    "GU",  # Guam
-    "AS",  # American Samoa
-    "MP"   # Northern Mariana Islands
-]
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ssl._create_default_https_context = ssl._create_unverified_context
 
-def extract_single_state(state):
-    """Extract bills for a single state or territory"""
-    try:
-        print(f"\n=== Starting extraction for {state} ===")
-        result = subprocess.run(
-            [sys.executable, "extract_bills.py", state], 
-            capture_output=True, text=True, timeout=1800  # 30 minute timeout
-        )
+def retry_on_failure(max_retries=MAX_RETRIES, delay=RETRY_DELAY):
+    """Decorator for retrying failed API requests"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        logging.error(f"API request failed after {max_retries} attempts: {e}")
+                        raise
+                    wait_time = delay * (2 ** attempt)  # Exponential backoff
+                    logging.warning(f"Attempt {attempt + 1} failed, retrying in {wait_time}s: {e}")
+                    time.sleep(wait_time)
+            return None
+        return wrapper
+    return decorator
+
+class ProductionCache:
+    """Caching system for faster subsequent runs"""
+    def __init__(self, cache_dir="cache"):
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(exist_ok=True)
         
-        if result.returncode == 0:
-            print(f"✓ {state} completed successfully")
-            print(result.stdout)  # Show the extraction summary
-            return True
-        else:
-            print(f"✗ {state} failed: {result.stderr}")
+    def get_cache_key(self, keyword, year):
+        """Generate cache key for search results"""
+        return hashlib.md5(f"{keyword}_{year}".encode()).hexdigest()
+    
+    def is_cache_valid(self, cache_key, max_age_hours=CACHE_DURATION_HOURS):
+        """Check if cache is still valid"""
+        cache_file = self.cache_dir / f"{cache_key}.json"
+        if not cache_file.exists():
             return False
-            
-    except subprocess.TimeoutExpired:
-        print(f"✗ {state} timed out after 30 minutes")
-        return False
-    except Exception as e:
-        print(f"✗ {state} error: {e}")
-        return False
-
-def job():
-    """Main job function - extract all states/territories and combine"""
-    print(f"\n{'='*60}")
-    print(f"Starting bi-weekly bill extraction job")
-    print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Total jurisdictions to process: {len(ALL_STATES)}")
-    print(f"{'='*60}")
-    
-    successful_jurisdictions = []
-    failed_jurisdictions = []
-    
-    # Extract each state/territory
-    for i, jurisdiction in enumerate(ALL_STATES, 1):
-        print(f"\n[{i}/{len(ALL_STATES)}] Processing {jurisdiction}...")
         
-        if extract_single_state(jurisdiction):
-            successful_jurisdictions.append(jurisdiction)
-        else:
-            failed_jurisdictions.append(jurisdiction)
+        try:
+            cache_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
+            return datetime.now() - cache_time < timedelta(hours=max_age_hours)
+        except (OSError, ValueError) as e:
+            logging.warning(f"Cache validation failed for {cache_key}: {e}")
+            return False
+    
+    def save_to_cache(self, cache_key, data):
+        """Save data to cache"""
+        try:
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            with open(cache_file, 'w') as f:
+                json.dump(data, f)
+        except (OSError, json.JSONEncodeError) as e:
+            logging.warning(f"Failed to save cache for {cache_key}: {e}")
+    
+    def load_from_cache(self, cache_key):
+        """Load data from cache"""
+        try:
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            if cache_file.exists():
+                with open(cache_file, 'r') as f:
+                    return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logging.warning(f"Failed to load cache for {cache_key}: {e}")
+        return None
+
+class LegiScanAPI:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.base_url = BASE_URL
+        self.session = requests.Session()
+        self.session.verify= False
+        self.cache = ProductionCache() if USE_CACHING else None
+        self.request_count = 0
+        self.failed_requests = 0
+        self.bill_details_cache = {}
+    def get_bill_details(self, bill_id):
+        """Get detailed bill information with global caching"""
+        if not bill_id:
+            logging.warning("Empty bill_id provided to get_bill_details")
+            return None
         
-        # Brief pause between jurisdictions
-        time.sleep(2)
-    
-    # Combine results
-    print(f"\n{'='*60}")
-    print(f"Combining results from all jurisdictions...")
-    print(f"{'='*60}")
-    
-    try:
-        result = subprocess.run(
-            [sys.executable, "combine_and_deduplicate.py"], 
-            capture_output=True, text=True, timeout=300
-        )
+        # Check global cache first
+        if bill_id in self.bill_details_cache:
+            return self.bill_details_cache[bill_id]
         
-        if result.returncode == 0:
-            print("✓ Successfully combined all jurisdiction files")
-            print(result.stdout)
-        else:
-            print(f"✗ Failed to combine files: {result.stderr}")
-            
-    except Exception as e:
-        print(f"✗ Error combining files: {e}")
-    
-    # Final summary
-    print(f"\n{'='*60}")
-    print(f"JOB COMPLETED")
-    print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*60}")
-    print(f"✓ Successful jurisdictions ({len(successful_jurisdictions)}): {', '.join(successful_jurisdictions)}")
-    if failed_jurisdictions:
-        print(f"✗ Failed jurisdictions ({len(failed_jurisdictions)}): {', '.join(failed_jurisdictions)}")
-    print(f"Success rate: {len(successful_jurisdictions)}/{len(ALL_STATES)} ({len(successful_jurisdictions)/len(ALL_STATES)*100:.1f}%)")
-    print(f"{'='*60}")
-
-# Schedule every 14 days at 2:00 AM
-schedule.every(14).days.at("02:00").do(job)
-
-if __name__ == "__main__":
-    print("Bill Extraction Scheduler Started")
-    print(f"Monitoring {len(ALL_STATES)} jurisdictions (50 states + DC + 5 territories)")
-    print("Scheduled to run every 14 days at 2:00 AM")
-    print("Press Ctrl+C to stop\n")
-    
-    # Optional: run once immediately for testing
-    if len(sys.argv) > 1 and sys.argv[1] == "--run-now":
-        print("Running job immediately...")
-        job()
-    elif len(sys.argv) > 1 and sys.argv[1] == "--test":
-        print("Running test with first 3 states...")
-        # Test with just first 3 states
-        original_states = ALL_STATES.copy()
-        ALL_STATES.clear()
-        ALL_STATES.extend(original_states[:3])
-        job()
-    else:
-        print("Options:")
-        print("  --run-now  : Run extraction immediately")
-        print("  --test     : Test with first 3 states only")
-        print("  (no args) : Start scheduler")
-        print()
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
-
-
-#################################################################
-
-##test_all_states_summary.py
-
-
-
-import requests
-import time
-from config import OPENSTATES_API_KEY
-
-# Test with representative states from different regions/data quality levels
-TEST_STATES = [
-    # High-detail states
-    "CA", "TX", "NY", "FL", "IL", "WA",
-    # Medium-detail states  
-    "PA", "OH", "MI", "GA", "NC", "VA",
-    # Low-detail states
-    "WY", "VT", "DE", "MT", "ND", "SD",
-    # Territories
-    "PR", "GU",
-    # Your original test states
-    "AK", "AL"
-]
-
-def get_enhanced_summary(bill):
-    """Same enhanced summary function from extract_bills.py"""
-    summary_fields = [
-        "summary", "abstract", "description", "digest", 
-        "synopsis", "brief", "overview", "purpose"
-    ]
-    
-    for field in summary_fields:
-        summary = bill.get(field, "")
-        if summary and len(summary.strip()) > 10:
-            return summary.strip()
-    
-    extras = bill.get("extras", {})
-    if isinstance(extras, dict):
-        for field in summary_fields:
-            summary = extras.get(field, "")
-            if summary and len(summary.strip()) > 10:
-                return summary.strip()
-    
-    actions = bill.get("actions", [])
-    if actions:
-        for action in actions:
-            action_desc = action.get("description", "")
-            if len(action_desc) > 50 and any(keyword in action_desc.lower() 
-                                           for keyword in ["amend", "create", "establish", "require", "provide"]):
-                return action_desc.strip()
-    
-    if actions:
-        for action in actions:
-            action_desc = action.get("description", "")
-            if "introduced" in action_desc.lower() and len(action_desc) > 30:
-                return action_desc.strip()
-    
-    title = bill.get("title", "")
-    if title and len(title) > 20:
-        clean_title = title.replace("An act to", "").replace("A bill to", "").replace("An Act", "").strip()
-        if clean_title:
-            return clean_title
-        return title
-    
-    return "No summary available"
-
-def test_state_summary_quality(state_abbr):
-    """Test summary extraction quality for a specific state"""
-    print(f"\n=== TESTING {state_abbr} ===")
-    
-    url = "https://v3.openstates.org/bills"
-    headers = {"X-API-KEY": OPENSTATES_API_KEY}
-    params = {
-        "jurisdiction": state_abbr.lower(),
-        "updated_since": "2025-01-01",
-        "per_page": 10,
-        "include": ["actions", "sponsorships", "sources"]
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code == 200:
-            bills = response.json().get("results", [])
-            
-            if not bills:
-                print(f"  ❌ No bills found")
-                return {"state": state_abbr, "status": "no_bills", "summary_quality": 0}
-            
-            # Analyze summary quality
-            summary_stats = {
-                "total_bills": len(bills),
-                "has_official_summary": 0,
-                "has_extracted_summary": 0,
-                "title_fallback": 0,
-                "no_summary": 0
-            }
-            
-            for bill in bills:
-                # Check for official summary fields
-                has_official = any(bill.get(field) for field in ["summary", "abstract", "description", "digest"])
-                
-                # Test enhanced extraction
-                summary = get_enhanced_summary(bill)
-                
-                if has_official:
-                    summary_stats["has_official_summary"] += 1
-                
-                if summary and summary != "No summary available":
-                    summary_stats["has_extracted_summary"] += 1
-                    
-                    # Check if it's just a title fallback
-                    title = bill.get("title", "")
-                    if title and (title in summary or summary in title):
-                        summary_stats["title_fallback"] += 1
-                else:
-                    summary_stats["no_summary"] += 1
-            
-            # Calculate quality score
-            quality_score = (summary_stats["has_official_summary"] / summary_stats["total_bills"]) * 100
-            
-            print(f"  ✓ Found {summary_stats['total_bills']} bills")
-            print(f"  ✓ Official summaries: {summary_stats['has_official_summary']}/{summary_stats['total_bills']} ({quality_score:.1f}%)")
-            print(f"  ✓ Extracted summaries: {summary_stats['has_extracted_summary']}/{summary_stats['total_bills']}")
-            print(f"  ✓ Title fallbacks: {summary_stats['title_fallback']}/{summary_stats['total_bills']}")
-            
-            return {
-                "state": state_abbr, 
-                "status": "success", 
-                "summary_quality": quality_score,
-                "stats": summary_stats
-            }
-            
-        else:
-            print(f"  ❌ API Error: {response.status_code}")
-            return {"state": state_abbr, "status": "api_error", "summary_quality": 0}
-            
-    except Exception as e:
-        print(f"  ❌ Error: {e}")
-        return {"state": state_abbr, "status": "error", "summary_quality": 0}
-
-def run_comprehensive_test():
-    """Test all states and generate summary report"""
-    print("COMPREHENSIVE SUMMARY EXTRACTION TEST")
-    print("=" * 60)
-    
-    results = []
-    
-    for i, state in enumerate(TEST_STATES):
-        print(f"\n[{i+1}/{len(TEST_STATES)}] Testing {state}...")
-        result = test_state_summary_quality(state)
-        results.append(result)
+        # Get from API if not cached
+        params = {'id': bill_id}
+        result = self._make_request('getBill', params)
         
-        # Rate limiting
-        time.sleep(6)
-    
-    # Generate summary report
-    print("\n" + "=" * 60)
-    print("SUMMARY REPORT")
-    print("=" * 60)
-    
-    successful_states = [r for r in results if r["status"] == "success"]
-    high_quality = [r for r in successful_states if r["summary_quality"] >= 50]
-    medium_quality = [r for r in successful_states if 20 <= r["summary_quality"] < 50]
-    low_quality = [r for r in successful_states if r["summary_quality"] < 20]
-    
-    print(f"Total states tested: {len(TEST_STATES)}")
-    print(f"Successful extractions: {len(successful_states)}")
-    print(f"High quality summaries (≥50%): {len(high_quality)}")
-    print(f"Medium quality summaries (20-49%): {len(medium_quality)}")
-    print(f"Low quality summaries (<20%): {len(low_quality)}")
-    
-    print("\nHigh Quality States:")
-    for r in high_quality:
-        print(f"  {r['state']}: {r['summary_quality']:.1f}%")
-    
-    print("\nMedium Quality States:")
-    for r in medium_quality:
-        print(f"  {r['state']}: {r['summary_quality']:.1f}%")
-    
-    print("\nLow Quality States:")
-    for r in low_quality:
-        print(f"  {r['state']}: {r['summary_quality']:.1f}%")
-    
-    print(f"\nOverall Success Rate: {len(successful_states)/len(TEST_STATES)*100:.1f}%")
-
-if __name__ == "__main__":
-    run_comprehensive_test()
-
-#################################################################
-
-#test_states.py
-
-
-import sys
-import requests
-from config import OPENSTATES_API_KEY
-
-TEST_STATES = ["AK", "CA", "TX", "NY", "FL"]
-
-def test_working_approach():
-    """Test the working bills search approach"""
-    print("=== TESTING BILLS SEARCH API ===\n")
-    
-    for state in TEST_STATES:
-        print(f"=== {state} - BILLS SEARCH ===")
+        # Cache the result
+        self.bill_details_cache[bill_id] = result
+        return result
         
-        url = "https://v3.openstates.org/bills"
-        headers = {"X-API-KEY": OPENSTATES_API_KEY}
+    @retry_on_failure()
+    def _make_request(self, operation, params=None):
+        """Make API request with error handling and retry logic"""
+        if params is None:
+            params = {}
+        
+        params['key'] = self.api_key
+        params['op'] = operation
+        
+        try:
+            response = self.session.get(self.base_url, params=params)
+            response.raise_for_status()
+            
+            self.request_count += 1
+            
+            # Add delay to respect rate limits
+            time.sleep(REQUEST_DELAY)
+            
+            return response.json()
+            
+        except requests.RequestException as e:
+            self.failed_requests += 1
+            logging.error(f"API request failed: {e}")
+            raise
+    
+    def search_bills_optimized(self, query, state='ALL', year=2):
+        """Optimized search with caching and filtering"""
+        # Check cache first
+        if self.cache and USE_CACHING:
+            cache_key = self.cache.get_cache_key(query, year)
+            if self.cache.is_cache_valid(cache_key):
+                cached_data = self.cache.load_from_cache(cache_key)
+                if cached_data:
+                    logging.info(f"Using cached results for keyword: {query}")
+                    return cached_data
+        
+        # Make API request
         params = {
-            "jurisdiction": state.lower(),
-            "updated_since": "2025-01-01",
-            "per_page": 10,
-            "include": "actions,sponsorships,sources"
+            'state': state,
+            'query': query,
+            'year': year
         }
         
-        try:
-            response = requests.get(url, headers=headers, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                bills = data.get("results", [])
+        results = self._make_request('getSearchRaw', params)
+        
+        # Filter and limit results
+        if results and results.get('status') == 'OK':
+            search_results = results.get('searchresult', {})
+            if search_results:  # Check if searchresult exists
+                bill_results = search_results.get('results', [])
                 
-                if bills:
-                    print(f"✓ Found {len(bills)} bills")
-                    
-                    # Extract unique sessions safely
-                    sessions = set()
-                    for bill in bills:
-                        session_info = bill.get("session")
-                        if session_info:
-                            if isinstance(session_info, dict):
-                                session_id = session_info.get("identifier", "")
-                                if session_id:
-                                    sessions.add(session_id)
-                            elif isinstance(session_info, str):
-                                sessions.add(session_info)
-                    
-                    print(f"✓ Sessions found: {list(sessions)}")
-                    
-                    # Show sample bills
-                    print("Sample bills:")
-                    for i, bill in enumerate(bills[:3]):
-                        print(f"  {i+1}. {bill.get('identifier', 'N/A')} - {bill.get('title', 'N/A')[:50]}...")
+                # Limit results for faster processing
+                #limited_results = bill_results
+                # Use all results when MAX_RESULTS_PER_KEYWORD is None
+                if MAX_RESULTS_PER_KEYWORD is None:
+                    limited_results = bill_results  # Use all results
                 else:
-                    print("✗ No bills found")
-            else:
-                print(f"✗ Error: {response.status_code} - {response.text}")
+                    limited_results = bill_results[:MAX_RESULTS_PER_KEYWORD]
+                
+                # Update results with limited data
+                results['searchresult']['results'] = limited_results
+                
+                # Cache the results
+                if self.cache and USE_CACHING:
+                    self.cache.save_to_cache(cache_key, results)
+        
+        return results
+    
+    def get_bill_details(self, bill_id):
+        """Get detailed bill information"""
+        if not bill_id:
+            logging.warning("Empty bill_id provided to get_bill_details")
+            return None
+            
+        params = {'id': bill_id}
+        return self._make_request('getBill', params)
+    
+   
+    
+    def get_sessions_by_year(self, year):
+        """Get all sessions for a specific year"""
+        all_sessions = self._make_request('getSessionList')
+        if not all_sessions or all_sessions.get('status') != 'OK':
+            return []
+        
+        year_sessions = []
+        sessions_data = all_sessions.get('sessions', [])
+        
+        for session in sessions_data:
+            if session.get('year_start') == year or session.get('year_end') == year:
+                year_sessions.append(session)
+        
+        return year_sessions
+    
+    def get_performance_stats(self):
+        """Get API performance statistics"""
+        return {
+            'total_requests': self.request_count,
+            'failed_requests': self.failed_requests,
+            'success_rate': (self.request_count - self.failed_requests) / max(self.request_count, 1) * 100
+        }
+
+
+
+    def search_temporal_segments(self, query):
+        """Search keyword across time segments with parallel processing"""
+        all_results = []
+        
+        def search_time_segment(segment):
+            """Search within a specific time segment"""
+            params = {
+                'state': 'ALL',
+                'query': query,
+                'year': 2  # Use recent sessions
+            }
+            
+            try:
+                results = self._make_request('getSearchRaw', params)
+                if results and results.get('status') == 'OK':
+                    bills = results.get('searchresult', {}).get('results', [])
+                    
+                    # Filter by date range (basic filtering by year for now)
+                    #filtered_bills = self._filter_by_year(bills, segment['start'][:4])
+                    filtered_bills = bills
+                    logging.info(f"Segment {segment['label']}: {len(filtered_bills)} bills")
+                    return filtered_bills
+                else:
+                    logging.info(f"Segment {segment['label']}: No results")
+                    return []
+                    
+            except Exception as e:
+                logging.error(f"Error searching segment {segment['label']}: {e}")
+                return []
+        
+        # Process time segments in parallel
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SEARCHES) as executor:
+            future_to_segment = {
+                executor.submit(search_time_segment, segment): segment
+                for segment in TIME_SEGMENTS
+            }
+            
+            for future in as_completed(future_to_segment):
+                try:
+                    segment_results = future.result()
+                    all_results.extend(segment_results)
+                except Exception as e:
+                    logging.error(f"Segment processing failed: {e}")
+        
+        # Remove duplicates by bill_id
+        unique_bills = {bill.get('bill_id'): bill for bill in all_results if bill.get('bill_id')}
+        return list(unique_bills.values())
+
+    def _filter_by_year(self, bills, target_year):
+        """Filter bills by year"""
+        filtered = []
+        for bill in bills:
+            # Extract year from bill data - check session year
+            bill_year = None
+            if 'session' in bill:
+                bill_year = bill['session'].get('year_start')
+            
+            # If year matches target year, include the bill
+            if bill_year == int(target_year):
+                filtered.append(bill)
+        
+        return filtered
+
+    def search_bills_comprehensive(self, query):
+        """Comprehensive search using temporal segmentation"""
+        logging.info(f"Starting comprehensive temporal search for: {query}")
+        
+        # Check cache first
+        if self.cache and USE_CACHING:
+            cache_key = f"temporal_{self.cache.get_cache_key(query, 'temporal')}"
+            if self.cache.is_cache_valid(cache_key):
+                cached_data = self.cache.load_from_cache(cache_key)
+                if cached_data:
+                    logging.info(f"Using cached temporal results for: {query}")
+                    return cached_data
+        
+        # Perform temporal segmentation search
+        all_bills = self.search_temporal_segments(query)
+        
+        # Cache results
+        if self.cache and USE_CACHING:
+            cache_key = f"temporal_{self.cache.get_cache_key(query, 'temporal')}"
+            self.cache.save_to_cache(cache_key, all_bills)
+        
+        return all_bills
+
+
+
+
+
+# Data_processor.py
+
+
+
+
+
+
+import pandas as pd
+import logging
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from config import *
+
+class BillProcessor:
+    def __init__(self):
+        self.processed_bills = []
+        self.processing_stats = {
+            'total_processed': 0,
+            'successful': 0,
+            'failed': 0,
+            'duplicates_removed': 0
+        }
+        
+    def extract_sponsors(self, sponsors_data, api_handler):
+        """Extract sponsors using actual LegiScan data structure"""
+        if not sponsors_data:
+            return "No sponsors listed"
+        
+        # Sort by sponsor_order to get primary sponsor first
+        sorted_sponsors = sorted(sponsors_data, key=lambda x: x.get('sponsor_order', 999))
+        
+        # Get first sponsor with a name (primary sponsor)
+        for sponsor in sorted_sponsors:
+            if sponsor.get('name'):
+                return sponsor['name']
+        
+        # If no sponsor has a name available
+        return "No sponsors listed"
+
+
+
+    
+    def extract_last_action(self, history_data):
+        """Extract the most recent action from history (without date)"""
+        if not history_data:
+            return "No action recorded"
+        
+        try:
+            # If it's a list of dictionaries
+            if isinstance(history_data, list) and history_data:
+                # Sort by date and get the most recent
+                sorted_actions = sorted(history_data, 
+                                    key=lambda x: x.get('date', '1900-01-01'), 
+                                    reverse=True)
+                latest_action = sorted_actions[0]
+                action_text = latest_action.get('action', 'No action text')
+                
+                # Truncate long actions for readability
+                if len(action_text) > 100:
+                    action_text = action_text[:100] + "..."
+                
+                return action_text  # Return only action text, no date
+            
+            # If it's already a string
+            if isinstance(history_data, str):
+                return history_data[:100] + "..." if len(history_data) > 100 else history_data
+                
+            # If it's a dictionary
+            if isinstance(history_data, dict):
+                action = history_data.get('action', 'No action recorded')
+                return action[:100] + "..." if len(action) > 100 else action
                 
         except Exception as e:
-            print(f"✗ Error: {e}")
-        
-        print("-" * 50)
-
-if __name__ == "__main__":
-    test_working_approach()
-
-
-#################################################################
-
-
-
-#test_summary_fix.py
-
-# test_summary_fix.py
-import requests
-from config import OPENSTATES_API_KEY
-
-def get_enhanced_summary(bill):
-    """Extract summary from multiple possible sources"""
-    
-    # Primary summary fields to check
-    summary_fields = [
-        "summary", "abstract", "description", "digest", 
-        "synopsis", "brief", "overview", "purpose"
-    ]
-    
-    # Try each field
-    for field in summary_fields:
-        summary = bill.get(field, "")
-        if summary and len(summary.strip()) > 10:  # Ensure meaningful content
-            return summary.strip()
-    
-    # Try nested fields
-    extras = bill.get("extras", {})
-    if isinstance(extras, dict):
-        for field in summary_fields:
-            summary = extras.get(field, "")
-            if summary and len(summary.strip()) > 10:
-                return summary.strip()
-    
-    # Extract from actions (legislative summaries)
-    actions = bill.get("actions", [])
-    if actions:
-        for action in actions:
-            action_desc = action.get("description", "")
-            # Look for actions that contain substantive descriptions
-            if len(action_desc) > 100 and any(keyword in action_desc.lower() 
-                                            for keyword in ["summary", "digest", "analysis"]):
-                return action_desc.strip()
-    
-    # Extract from documents if available
-    documents = bill.get("documents", [])
-    if documents:
-        for doc in documents:
-            doc_name = doc.get("name", "").lower()
-            if any(keyword in doc_name for keyword in ["summary", "digest", "analysis"]):
-                return f"See document: {doc.get('name', 'Legislative Document')}"
-    
-    # Last resort: use bill title as summary if nothing else available
-    title = bill.get("title", "")
-    if title and len(title) > 20:
-        return f"Bill Title: {title}"
-    
-    return "No summary available"
-
-def test_summary_extraction(state_abbr):
-    """Test summary extraction for debugging"""
-    print(f"\n=== TESTING SUMMARY EXTRACTION FOR {state_abbr} ===")
-    
-    url = "https://v3.openstates.org/bills"
-    headers = {"X-API-KEY": OPENSTATES_API_KEY}
-    params = {
-        "jurisdiction": state_abbr.lower(),
-        "updated_since": "2025-01-01",
-        "per_page": 5,
-        "include": ["actions", "sponsorships", "sources"]
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code == 200:
-            bills = response.json().get("results", [])
+            logging.warning(f"Failed to extract last action: {e}")
             
-            for bill in bills:
-                print(f"\nBill: {bill.get('identifier', 'N/A')}")
-                print(f"Title: {bill.get('title', 'N/A')}")
+        return "No action recorded"
+
+    
+    def process_bill_data(self, bill_data, api_handler):
+        """Process individual bill data into required format (optimized)"""
+        try:
+            bill = bill_data.get('bill', {})
+            session = bill.get('session', {})
+            
+            # Get state abbreviation and convert to full name
+            state_abbr = bill.get('state', '')
+            state_full_name = STATE_MAPPING.get(state_abbr, state_abbr)  # Fallback to abbreviation if not found
+            
+            # Extract required fields
+            processed_bill = {
+                'Year': session.get('year_start', ''),
+                'State': state_full_name,  # Use full state name instead of abbreviation
+                'Bill Number': bill.get('bill_number', ''),
+                'Bill Title/Topic': bill.get('title', ''),
+                'Summary': bill.get('description', ''),
+                'Sponsors': self.extract_sponsors(bill.get('sponsors', []), api_handler),
+                'Last Action': self.extract_last_action(bill.get('history', [])),
+                'Bill Link': self.get_state_bill_link(bill),# No date included
+                #'Bill Link': bill.get('url', ''),
+                'Current Status': STATUS_MAPPING.get(bill.get('status'), 'Unknown'),
+                'Extracted Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            self.processing_stats['successful'] += 1
+            return processed_bill
+            
+        except Exception as e:
+            logging.error(f"Failed to process bill data: {e}")
+            self.processing_stats['failed'] += 1
+            return None
+
+    
+    def process_bills_batch(self, bill_ids, api_handler):
+        """Process multiple bills concurrently"""
+        processed_bills = []
+        
+        with ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+            # Submit all bill processing tasks
+            future_to_bill = {}
+            for bill_id in bill_ids:
+                future = executor.submit(self._process_single_bill, bill_id, api_handler)
+                future_to_bill[future] = bill_id
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_bill):
+                bill_id = future_to_bill[future]
+                try:
+                    result = future.result()
+                    if result:
+                        processed_bills.append(result)
+                except Exception as e:
+                    logging.error(f"Error processing bill {bill_id}: {e}")
+                    
+        return processed_bills
+    
+    def _process_single_bill(self, bill_id, api_handler):
+        """Process a single bill (simplified - trust API search results)"""
+        try:
+            bill_details = api_handler.get_bill_details(bill_id)
+            
+            if not bill_details or bill_details.get('status') != 'OK':
+                #print(f"    DEBUG: Bill {bill_id} - Failed to get details")
+                return None
+            
+            # Check if bill is from target years
+            bill_year = bill_details.get('bill', {}).get('session', {}).get('year_start')
+            #print(f"    DEBUG: Bill {bill_id} is from year {bill_year}")
+            
+            if bill_year not in TARGET_YEARS:
+                #print(f"    DEBUG: Filtered out {bill_id} - wrong year ({bill_year})")
+                return None
+            
+            # Skip keyword verification here - trust API search results
+            #print(f"    DEBUG: Bill {bill_id} - Processing (trusting API search)")
+            return bill_details
+            
+        except Exception as e:
+            logging.error(f"Failed to process bill {bill_id}: {e}")
+            #print(f"    DEBUG: Bill {bill_id} - Error: {e}")
+            return None
+
+    def check_keyword_match(self, bill_data, target_keyword):
+        """Enhanced keyword matching with flexibility"""
+        if not bill_data:
+            return False, target_keyword
+        
+        # Get the bill data
+        bill = bill_data.get('bill', {}) if 'bill' in bill_data else bill_data
+        
+        # Fields to search in
+        search_fields = [
+            bill.get('title', ''),
+            bill.get('description', ''),
+            bill.get('summary', ''),
+            bill.get('text', ''),
+        ]
+        
+        # Search in history/actions
+        history = bill.get('history', [])
+        if isinstance(history, list):
+            for action in history:
+                if isinstance(action, dict):
+                    search_fields.append(action.get('action', ''))
+        
+        # Search in sponsors
+        sponsors = bill.get('sponsors', [])
+        if isinstance(sponsors, list):
+            for sponsor in sponsors:
+                if isinstance(sponsor, dict):
+                    search_fields.append(sponsor.get('name', ''))
+        
+        # Combine all text and search (case-insensitive)
+        combined_text = ' '.join(search_fields).lower()
+        
+        # Enhanced keyword matching
+        keyword_variations = [
+            target_keyword.lower(),
+            target_keyword.lower().replace(' review', ''),  # "utilization" matches "utilization review"
+            target_keyword.lower().replace(' ', ''),        # Handle spacing issues
+        ]
+        
+        # Check for any variation
+        for variation in keyword_variations:
+            if variation in combined_text:
+                logging.debug(f" Keyword '{target_keyword}' found in bill {bill.get('bill number ','unkow')}")
+                return True, target_keyword
+        
+        # If strict matching fails, trust API results for now
+        logging.info(f"Keyword '{target_keyword}' not found in bill {bill.get('bill_number', 'unknown')} - filtering out ")
+        return False, target_keyword  # Trust API search results
+    
+    def get_state_bill_link(self, bill):
+        """Extract state bill link instead of LegiScan link"""
+        # Try state_link first
+        state_link = bill.get('state_link', '')
+        if state_link:
+            return state_link
+        
+        # Try state_url
+        state_url = bill.get('state_url', '')
+        if state_url:
+            return state_url
+        
+        # Fallback to LegiScan URL if no state link
+        return bill.get('url', 'No link available')
+
+    
+    def add_bill(self, processed_bill):
+        """Add a processed bill to the collection"""
+        if processed_bill:
+            self.processed_bills.append(processed_bill)
+            self.processing_stats['total_processed'] += 1
+            
+    def remove_duplicates(self):
+        """Remove duplicate bills based on state and bill number"""
+        seen = set()
+        unique_bills = []
+        
+        for bill in self.processed_bills:
+            identifier = (bill['State'], bill['Bill Number'])
+            if identifier not in seen:
+                seen.add(identifier)
+                unique_bills.append(bill)
+            else:
+                self.processing_stats['duplicates_removed'] += 1
+                #logging.info(f"Removed duplicate: {bill['State']} {bill['Bill Number']}")
+        
+        self.processed_bills = unique_bills
+        
+    def save_to_excel(self, output_file=OUTPUT_FILE):
+        """Save processed bills to Excel file (optimized)"""
+        if not self.processed_bills:
+            logging.warning("No bills to save")
+            print("No bills found matching your criteria.")
+            return
+        
+        # Remove duplicates before saving
+        self.remove_duplicates()
+        
+        try:
+            df = pd.DataFrame(self.processed_bills)
+            
+            # Ensure output directory exists
+            import os
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            
+            # Save to Excel with formatting
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Bills', index=False)
                 
-                # Test original fields
-                print(f"Summary field: {bill.get('summary', 'EMPTY')}")
-                print(f"Abstract field: {bill.get('abstract', 'EMPTY')}")
-                print(f"Description field: {bill.get('description', 'EMPTY')}")
+                # Get the workbook and worksheet
+                worksheet = writer.sheets['Bills']
                 
-                # Test enhanced extraction
-                summary = get_enhanced_summary(bill)
-                print(f"Enhanced summary: {summary[:100]}...")
-                print("-" * 50)
-        else:
-            print(f"Error: {response.status_code}")
-    except Exception as e:
-        print(f"Error: {e}")
+                # Auto-adjust column widths (optimized)
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            logging.info(f"Saved {len(self.processed_bills)} bills to {output_file}")
+            print(f"Successfully saved {len(self.processed_bills)} bills to {output_file}")
+            
+        except Exception as e:
+            logging.error(f"Failed to save Excel file: {e}")
+            print(f"Error saving Excel file: {e}")
+    
+    def get_summary(self):
+        """Get a summary of processed bills"""
+        if not self.processed_bills:
+            return "No bills processed"
+        
+        total_bills = len(self.processed_bills)
+        states = set(bill['State'] for bill in self.processed_bills)
+        years = set(bill['Year'] for bill in self.processed_bills)
+        
+        return f"Total Bills: {total_bills} | States: {len(states)} | Years: {sorted(years)}"
+    
+    def get_processing_stats(self):
+        """Get detailed processing statistics"""
+        return self.processing_stats
+    
+    def process_bills_batch_parallel(self, bill_ids, api_handler):
+        """Process multiple bills with parallel execution"""
+        processed_bills = []
+        
+        def process_single_bill_wrapper(bill_id):
+            """Wrapper for single bill processing"""
+            return self._process_single_bill(bill_id, api_handler)
+        
+        # Process bills in parallel
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_BILLS) as executor:
+            future_to_bill = {
+                executor.submit(process_single_bill_wrapper, bill_id): bill_id
+                for bill_id in bill_ids
+            }
+            
+            for future in as_completed(future_to_bill):
+                bill_id = future_to_bill[future]
+                try:
+                    result = future.result()
+                    if result:
+                        processed_bills.append(result)
+                except Exception as e:
+                    logging.error(f"Error processing bill {bill_id}: {e}")
+        
+        return processed_bills
+
+
+
+
+
+
+main.py
+
+
+
+
+
+
+
+
+
+
+
+import logging
+from datetime import datetime
+import os
+import time
+#from concurrent.futures import ThreadPoolExecutor, as_completed
+from Bill_extractor import LegiScanAPI
+from data_processor import BillProcessor
+from config import *
+
+def setup_logging():
+    """Setup logging configuration"""
+    os.makedirs('logs', exist_ok=True)
+    
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL),
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler()
+        ]
+    )
+
+'''def process_keyword_batch(api, processor, keywords_batch):
+    """Process a batch of keywords"""
+    batch_results = []
+    
+    for keyword in keywords_batch:
+        try:
+            keyword_result = process_single_keyword(api, processor, keyword)
+            batch_results.append(keyword_result)
+        except Exception as e:
+            logging.error(f"Error processing keyword {keyword}: {e}")
+            batch_results.append({'keyword': keyword, 'count': 0, 'error': str(e)})
+    
+    return batch_results'''
+
+
+def process_single_keyword(api, processor, keyword):
+    """Process a single keyword with STRICT keyword verification"""
+    logging.info(f"Searching comprehensively for keyword: {keyword}")
+    
+    keyword_bills = 0
+    
+    # Use comprehensive temporal search
+    all_bill_results = api.search_bills_comprehensive(keyword)
+    
+    if not all_bill_results:
+        logging.warning(f"No results found for keyword: {keyword}")
+        return {'keyword': keyword, 'count': 0, 'error': 'No results found'}
+    
+    # Extract bill IDs and DEDUPLICATE
+    bill_ids_raw = [bill.get('bill_id') for bill in all_bill_results if bill.get('bill_id')]
+    bill_ids = list(set(bill_ids_raw))  # Remove duplicates with set()
+    
+    # Show deduplication impact
+    duplicates_removed = len(bill_ids_raw) - len(bill_ids)
+    print(f"  📋 Processing {len(bill_ids)} unique bills ({duplicates_removed} duplicates removed)")
+    
+    # Process unique bills in batches
+    total_batches = (len(bill_ids) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    for i in range(0, len(bill_ids), BATCH_SIZE):
+        batch = bill_ids[i:i + BATCH_SIZE]
+        current_batch = (i // BATCH_SIZE) + 1
+        
+        print(f"   Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
+        
+        try:
+            # Get raw bill details first
+            processed_bills = processor.process_bills_batch_parallel(batch, api)
+            
+            #  CRITICAL FIX: Strict keyword verification before adding
+            for bill in processed_bills:
+                if bill:
+                    # Check keyword match BEFORE processing into final format
+                    is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
+                    
+                    if is_match:  #  Only process bills with verified keyword matches
+                        # Process into final format only after keyword verification
+                        final_bill = processor.process_bill_data(bill, api)
+                        if final_bill:
+                            processor.add_bill(final_bill)
+                            keyword_bills += 1
+                    #  Bills without keyword matches are silently filtered out
+                        
+        except Exception as e:
+            print(f"  ❌ Error processing batch {current_batch}: {e}")
+            logging.error(f"Error processing batch {current_batch}: {e}")
+    
+    print(f"  ✅ Completed processing {keyword_bills} bills with verified keywords")
+    return {'keyword': keyword, 'count': keyword_bills, 'error': None}
+
+
+def main():
+    """Main extraction workflow (optimized for production)"""
+    start_time = time.time()
+    
+    print("=" * 60)
+    print("PRODUCTION BILL EXTRACTION SYSTEM - STARTING")
+    print("=" * 60)
+    
+    setup_logging()
+    logging.info("Starting optimized bill extraction process")
+    
+    # Initialize API handler and processor
+    api = LegiScanAPI(API_KEY)
+    processor = BillProcessor()
+    
+    print(f"Searching for bills containing {len(KEYWORDS)} healthcare-related keywords...")
+    print(f"Target years: {TARGET_YEARS}")
+    print(f"Max results per keyword: {MAX_RESULTS_PER_KEYWORD}")
+    print(f"Concurrent workers: {CONCURRENT_WORKERS}")
+    if USE_CACHING:
+        print("✅ Caching enabled for faster subsequent runs")
+    print("-" * 60)
+    
+    # Process keywords with progress tracking
+    search_results_summary = {}
+    
+    for i, keyword in enumerate(KEYWORDS, 1):
+        print(f"[{i}/{len(KEYWORDS)}] Processing: '{keyword}'")
+        
+        try:
+            result = process_single_keyword(api, processor, keyword)
+            search_results_summary[keyword] = result['count']
+            
+            '''if result['error']:
+                print(f"  ⚠️  {result['error']}")
+            else:
+                print(f"  📊 Added {result['count']} bills")'''
+                
+        except Exception as e:
+            print(f"  ❌ Error processing '{keyword}': {e}")
+            logging.error(f"Error processing keyword {keyword}: {e}")
+            search_results_summary[keyword] = 0
+        
+       
+    
+    # Calculate processing time
+    processing_time = time.time() - start_time
+    
+    print("=" * 60)
+    print("EXTRACTION COMPLETE")
+    print("=" * 60)
+    
+    # Show comprehensive summary
+    total_bills = len(processor.processed_bills)
+    print(f"Total bills found: {total_bills}")
+    print(f"Processing time: {processing_time:.2f} seconds ({processing_time/60:.1f} minutes)")
+    print(f"Processor summary: {processor.get_summary()}")
+    
+    # Show performance statistics
+    api_stats = api.get_performance_stats()
+    processing_stats = processor.get_processing_stats()
+    
+    print(f"\nPerformance Statistics:")
+    print(f"  API requests: {api_stats['total_requests']}")
+    print(f"  API success rate: {api_stats['success_rate']:.1f}%")
+    print(f"  Bills processed: {processing_stats['successful']}")
+    print(f"  Processing failures: {processing_stats['failed']}")
+    print(f"  Duplicates removed: {processing_stats['duplicates_removed']}")
+    
+    # Show keyword breakdown
+    print("\nKeyword Breakdown:")
+    for keyword, count in search_results_summary.items():
+        print(f"  • {keyword}: {count} bills")
+    
+    # Save results to Excel
+    print("\nSaving results to Excel...")
+    processor.save_to_excel()
+    
+    # Calculate processing rate
+    if processing_time > 0:
+        rate = total_bills / processing_time
+        print(f"\nProcessing rate: {rate:.2f} bills/second")
+    
+    print(f"\nExtraction complete! Check your results in: {OUTPUT_FILE}")
+    print(f"Logs saved to: {LOG_FILE}")
+    
+    logging.info(f"Extraction complete. Total bills: {total_bills}, Time: {processing_time:.2f}s")
 
 if __name__ == "__main__":
-    # Test with your problematic states
-    test_summary_extraction("AK")
-    test_summary_extraction("AL")
-    test_summary_extraction("CA")  # For comparison
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nExtraction interrupted by user.")
+        logging.info("Extraction interrupted by user")
+    except Exception as e:
+        print(f"\n\nUnexpected error: {e}")
+        logging.error(f"Unexpected error: {e}")
+        raise
 
 
 
-#################################################################
 
-#################################################################
+
