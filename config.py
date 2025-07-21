@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 # API Configuration
-API_KEY = "d39580082926ca46d23b481e7806b26e"  # Keep your actual API key
+API_KEY = "e0a5e09d270fc3d4d10d223b63e21c9e"  # Keep your actual API key
 BASE_URL = "https://api.legiscan.com/"
 
 # Search Keywords
@@ -65,6 +65,8 @@ TIME_SEGMENTS = [
     {'start': '2026-07-01', 'end': '2026-12-31', 'label': 'H2 2026'}
 ]
 
+
+
 # Parallel processing settings
 MAX_CONCURRENT_SEARCHES = 3  # Time segments processed simultaneously
 MAX_CONCURRENT_BILLS = 5     # Bill details processed simultaneously
@@ -124,3 +126,6 @@ STATE_MAPPING = {
     'DC': 'District of Columbia',
     'US': 'United States'
 }
+
+
+
