@@ -145,7 +145,7 @@ class BillProcessor:
             
             # Skip keyword verification here - trust API search results
             #print(f"    DEBUG: Bill {bill_id} - Processing (trusting API search)")
-            return self.process_bill_data(bill_details, api_handler)
+            return bill_details
             
         except Exception as e:
             logging.error(f"Failed to process bill {bill_id}: {e}")
@@ -195,11 +195,12 @@ class BillProcessor:
         # Check for any variation
         for variation in keyword_variations:
             if variation in combined_text:
+                logging.debug(f" Keyword '{target_keyword}' found in bill {bill.get('bill number ','unkow')}")
                 return True, target_keyword
         
         # If strict matching fails, trust API results for now
-        logging.info(f"Keyword '{target_keyword}' not found in bill {bill.get('bill_number', 'unknown')} - trusting API")
-        return True, target_keyword  # Trust API search results
+        logging.info(f"Keyword '{target_keyword}' not found in bill {bill.get('bill_number', 'unknown')} - filtering out ")
+        return False, target_keyword  # Trust API search results
     
     def get_state_bill_link(self, bill):
         """Extract state bill link instead of LegiScan link"""
@@ -324,4 +325,3 @@ class BillProcessor:
         
         return processed_bills
 
-    
