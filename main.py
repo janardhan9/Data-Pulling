@@ -37,8 +37,7 @@ def setup_logging():
 
 
 def process_single_keyword(api, processor, keyword):
-    
-    """Process a single keyword with bill ID deduplication"""
+    """Process a single keyword with STRICT keyword verification"""
     logging.info(f"Searching comprehensively for keyword: {keyword}")
     
     keyword_bills = 0
@@ -65,23 +64,31 @@ def process_single_keyword(api, processor, keyword):
         batch = bill_ids[i:i + BATCH_SIZE]
         current_batch = (i // BATCH_SIZE) + 1
         
-        print(f"  📊 Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
+        print(f"   Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
         
         try:
+            # Get raw bill details first
             processed_bills = processor.process_bills_batch_parallel(batch, api)
             
+            #  CRITICAL FIX: Strict keyword verification before adding
             for bill in processed_bills:
                 if bill:
+                    # Check keyword match BEFORE processing into final format
                     is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
-                    if is_match:
-                        processor.add_bill(bill)
-                        keyword_bills += 1
+                    
+                    if is_match:  #  Only process bills with verified keyword matches
+                        # Process into final format only after keyword verification
+                        final_bill = processor.process_bill_data(bill, api)
+                        if final_bill:
+                            processor.add_bill(final_bill)
+                            keyword_bills += 1
+                    #  Bills without keyword matches are silently filtered out
                         
         except Exception as e:
             print(f"  ❌ Error processing batch {current_batch}: {e}")
             logging.error(f"Error processing batch {current_batch}: {e}")
     
-    print(f"  ✅ Completed processing {keyword_bills} bills")
+    print(f"  ✅ Completed processing {keyword_bills} bills with verified keywords")
     return {'keyword': keyword, 'count': keyword_bills, 'error': None}
 
 
@@ -183,3 +190,6 @@ if __name__ == "__main__":
         print(f"\n\nUnexpected error: {e}")
         logging.error(f"Unexpected error: {e}")
         raise
+
+
+
