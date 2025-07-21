@@ -992,3 +992,837 @@ if __name__ == "__main__":
 
 
 
+
+
+
+
+
+########################################################################################################
+This approach is 2000 seachlimit 
+
+#This is my configuration file 
+
+import os
+from datetime import datetime
+
+# API Configuration
+API_KEY = "e0a5e09d270fc3d4d10d223b63e21c9e"  # Keep your actual API key
+BASE_URL = "https://api.legiscan.com/"
+
+# Search Keywords
+KEYWORDS = [
+    'Prior authorization',
+    'Utilization review',
+    'Utilization management',
+    'Medical necessity review',
+    'Prompt pay',
+    'Prompt payment',
+    'Clean claims',
+    'Clean claim',
+    'Coordination of benefits',
+    'Artificial intelligence',
+    'Clinical decision support',
+    'Automated decision making',
+    'Automate decision support'
+]
+
+# Target Years
+TARGET_YEARS = [2025, 2026]
+
+# Status Code Mapping
+STATUS_MAPPING = {
+    1: "Introduced",
+    2: "Engrossed", 
+    3: "Enrolled",
+    4: "Passed"
+}
+
+# Output Configuration
+OUTPUT_FILE = "data/bills_output.xlsx"
+LOG_FILE = "logs/extraction.log"
+
+# Production Performance Settings
+REQUEST_DELAY = 0.25  # Reduced from 0.5 seconds
+MAX_RESULTS_PER_KEYWORD = None  # Limit results per keyword for faster processing
+CONCURRENT_WORKERS = 3  # Number of parallel workers
+BATCH_SIZE = 20  # Process bills in batches
+USE_CACHING = True  # Enable caching for faster subsequent runs
+CACHE_DURATION_HOURS = 12  # Cache validity period
+
+# Retry Configuration
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # Initial retry delay in seconds
+
+# Logging Configuration
+LOG_LEVEL = "INFO"
+ENABLE_PROGRESS_BAR = True
+
+
+# State abbreviation to full name mapping
+STATE_MAPPING = {
+    'AL': 'Alabama',
+    'AK': 'Alaska',
+    'AZ': 'Arizona',
+    'AR': 'Arkansas',
+    'CA': 'California',
+    'CO': 'Colorado',
+    'CT': 'Connecticut',
+    'DE': 'Delaware',
+    'FL': 'Florida',
+    'GA': 'Georgia',
+    'HI': 'Hawaii',
+    'ID': 'Idaho',
+    'IL': 'Illinois',
+    'IN': 'Indiana',
+    'IA': 'Iowa',
+    'KS': 'Kansas',
+    'KY': 'Kentucky',
+    'LA': 'Louisiana',
+    'ME': 'Maine',
+    'MD': 'Maryland',
+    'MA': 'Massachusetts',
+    'MI': 'Michigan',
+    'MN': 'Minnesota',
+    'MS': 'Mississippi',
+    'MO': 'Missouri',
+    'MT': 'Montana',
+    'NE': 'Nebraska',
+    'NV': 'Nevada',
+    'NH': 'New Hampshire',
+    'NJ': 'New Jersey',
+    'NM': 'New Mexico',
+    'NY': 'New York',
+    'NC': 'North Carolina',
+    'ND': 'North Dakota',
+    'OH': 'Ohio',
+    'OK': 'Oklahoma',
+    'OR': 'Oregon',
+    'PA': 'Pennsylvania',
+    'RI': 'Rhode Island',
+    'SC': 'South Carolina',
+    'SD': 'South Dakota',
+    'TN': 'Tennessee',
+    'TX': 'Texas',
+    'UT': 'Utah',
+    'VT': 'Vermont',
+    'VA': 'Virginia',
+    'WA': 'Washington',
+    'WV': 'West Virginia',
+    'WI': 'Wisconsin',
+    'WY': 'Wyoming',
+    'DC': 'District of Columbia',
+    'US': 'United States'
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#is this looks fine right now for bill extracor file Bill extractor
+
+
+import requests
+import time
+import json
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+import hashlib
+from functools import wraps
+from config import *
+
+def retry_on_failure(max_retries=MAX_RETRIES, delay=RETRY_DELAY):
+    """Decorator for retrying failed API requests"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        logging.error(f"API request failed after {max_retries} attempts: {e}")
+                        raise
+                    wait_time = delay * (2 ** attempt)  # Exponential backoff
+                    logging.warning(f"Attempt {attempt + 1} failed, retrying in {wait_time}s: {e}")
+                    time.sleep(wait_time)
+            return None
+        return wrapper
+    return decorator
+
+class ProductionCache:
+    """Caching system for faster subsequent runs"""
+    def __init__(self, cache_dir="cache"):
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(exist_ok=True)
+        
+    def get_cache_key(self, keyword, year):
+        """Generate cache key for search results"""
+        return hashlib.md5(f"{keyword}_{year}".encode()).hexdigest()
+    
+    def is_cache_valid(self, cache_key, max_age_hours=CACHE_DURATION_HOURS):
+        """Check if cache is still valid"""
+        cache_file = self.cache_dir / f"{cache_key}.json"
+        if not cache_file.exists():
+            return False
+        
+        try:
+            cache_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
+            return datetime.now() - cache_time < timedelta(hours=max_age_hours)
+        except (OSError, ValueError) as e:
+            logging.warning(f"Cache validation failed for {cache_key}: {e}")
+            return False
+    
+    def save_to_cache(self, cache_key, data):
+        """Save data to cache"""
+        try:
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            with open(cache_file, 'w') as f:
+                json.dump(data, f)
+        except (OSError, json.JSONEncodeError) as e:
+            logging.warning(f"Failed to save cache for {cache_key}: {e}")
+    
+    def load_from_cache(self, cache_key):
+        """Load data from cache"""
+        try:
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            if cache_file.exists():
+                with open(cache_file, 'r') as f:
+                    return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logging.warning(f"Failed to load cache for {cache_key}: {e}")
+        return None
+
+class LegiScanAPI:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.base_url = BASE_URL
+        self.session = requests.Session()
+        self.cache = ProductionCache() if USE_CACHING else None
+        self.request_count = 0
+        self.failed_requests = 0
+        
+    @retry_on_failure()
+    def _make_request(self, operation, params=None):
+        """Make API request with error handling and retry logic"""
+        if params is None:
+            params = {}
+        
+        params['key'] = self.api_key
+        params['op'] = operation
+        
+        try:
+            response = self.session.get(self.base_url, params=params)
+            response.raise_for_status()
+            
+            self.request_count += 1
+            
+            # Add delay to respect rate limits
+            time.sleep(REQUEST_DELAY)
+            
+            return response.json()
+            
+        except requests.RequestException as e:
+            self.failed_requests += 1
+            logging.error(f"API request failed: {e}")
+            raise
+    
+    def search_bills_optimized(self, query, state='ALL', year=2):
+        """Optimized search with caching and filtering"""
+        # Check cache first
+        if self.cache and USE_CACHING:
+            cache_key = self.cache.get_cache_key(query, year)
+            if self.cache.is_cache_valid(cache_key):
+                cached_data = self.cache.load_from_cache(cache_key)
+                if cached_data:
+                    logging.info(f"Using cached results for keyword: {query}")
+                    return cached_data
+        
+        # Make API request
+        params = {
+            'state': state,
+            'query': query,
+            'year': year
+        }
+        
+        results = self._make_request('getSearchRaw', params)
+        
+        # Filter and limit results
+        if results and results.get('status') == 'OK':
+            search_results = results.get('searchresult', {})
+            if search_results:  # Check if searchresult exists
+                bill_results = search_results.get('results', [])
+                
+                # Limit results for faster processing
+                #limited_results = bill_results
+                # Use all results when MAX_RESULTS_PER_KEYWORD is None
+                if MAX_RESULTS_PER_KEYWORD is None:
+                    limited_results = bill_results  # Use all results
+                else:
+                    limited_results = bill_results[:MAX_RESULTS_PER_KEYWORD]
+                
+                # Update results with limited data
+                results['searchresult']['results'] = limited_results
+                
+                # Cache the results
+                if self.cache and USE_CACHING:
+                    self.cache.save_to_cache(cache_key, results)
+        
+        return results
+    
+    def get_bill_details(self, bill_id):
+        """Get detailed bill information"""
+        if not bill_id:
+            logging.warning("Empty bill_id provided to get_bill_details")
+            return None
+            
+        params = {'id': bill_id}
+        return self._make_request('getBill', params)
+    
+    def get_person_details(self, people_id):
+        """Get sponsor information"""
+        if not people_id:
+            logging.warning("Empty people_id provided to get_person_details")
+            return None
+            
+        params = {'id': people_id}
+        return self._make_request('getPerson', params)
+    
+    def get_sessions_by_year(self, year):
+        """Get all sessions for a specific year"""
+        all_sessions = self._make_request('getSessionList')
+        if not all_sessions or all_sessions.get('status') != 'OK':
+            return []
+        
+        year_sessions = []
+        sessions_data = all_sessions.get('sessions', [])
+        
+        for session in sessions_data:
+            if session.get('year_start') == year or session.get('year_end') == year:
+                year_sessions.append(session)
+        
+        return year_sessions
+    
+    def get_performance_stats(self):
+        """Get API performance statistics"""
+        return {
+            'total_requests': self.request_count,
+            'failed_requests': self.failed_requests,
+            'success_rate': (self.request_count - self.failed_requests) / max(self.request_count, 1) * 100
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#this is my data_processor file 
+
+
+import pandas as pd
+import logging
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from config import *
+
+class BillProcessor:
+    def __init__(self):
+        self.processed_bills = []
+        self.processing_stats = {
+            'total_processed': 0,
+            'successful': 0,
+            'failed': 0,
+            'duplicates_removed': 0
+        }
+        
+    def extract_sponsors(self, sponsors_data, api_handler):
+        """Extract and resolve sponsor names (optimized)"""
+        sponsor_names = []
+        
+        if not sponsors_data:
+            return "No sponsors listed"
+        
+        # Process only first 5 sponsors for speed
+        limited_sponsors = sponsors_data[:5]
+        
+        for sponsor in limited_sponsors:
+            try:
+                if sponsor.get('name'):
+                    sponsor_names.append(sponsor['name'])
+                elif sponsor.get('people_id'):
+                    # Resolve sponsor name from people_id
+                    person_data = api_handler.get_person_details(sponsor['people_id'])
+                    if person_data and person_data.get('status') == 'OK':
+                        person_info = person_data.get('person', {})
+                        name = person_info.get('name', 'Unknown')
+                        sponsor_names.append(name)
+                    else:
+                        sponsor_names.append('Unknown')
+            except Exception as e:
+                logging.warning(f"Failed to resolve sponsor: {e}")
+                sponsor_names.append('Unknown')
+        
+        # Add indication if there are more sponsors
+        if len(sponsors_data) > 5:
+            sponsor_names.append(f"... and {len(sponsors_data) - 5} more")
+        
+        return ', '.join(sponsor_names) if sponsor_names else "No sponsors listed"
+    
+    def extract_last_action(self, history_data):
+        """Extract the most recent action from history (without date)"""
+        if not history_data:
+            return "No action recorded"
+        
+        try:
+            # If it's a list of dictionaries
+            if isinstance(history_data, list) and history_data:
+                # Sort by date and get the most recent
+                sorted_actions = sorted(history_data, 
+                                    key=lambda x: x.get('date', '1900-01-01'), 
+                                    reverse=True)
+                latest_action = sorted_actions[0]
+                action_text = latest_action.get('action', 'No action text')
+                
+                # Truncate long actions for readability
+                if len(action_text) > 100:
+                    action_text = action_text[:100] + "..."
+                
+                return action_text  # Return only action text, no date
+            
+            # If it's already a string
+            if isinstance(history_data, str):
+                return history_data[:100] + "..." if len(history_data) > 100 else history_data
+                
+            # If it's a dictionary
+            if isinstance(history_data, dict):
+                action = history_data.get('action', 'No action recorded')
+                return action[:100] + "..." if len(action) > 100 else action
+                
+        except Exception as e:
+            logging.warning(f"Failed to extract last action: {e}")
+            
+        return "No action recorded"
+
+    
+    def process_bill_data(self, bill_data, api_handler):
+        """Process individual bill data into required format (optimized)"""
+        try:
+            bill = bill_data.get('bill', {})
+            session = bill.get('session', {})
+            
+            # Get state abbreviation and convert to full name
+            state_abbr = bill.get('state', '')
+            state_full_name = STATE_MAPPING.get(state_abbr, state_abbr)  # Fallback to abbreviation if not found
+            
+            # Extract required fields
+            processed_bill = {
+                'Year': session.get('year_start', ''),
+                'State': state_full_name,  # Use full state name instead of abbreviation
+                'Bill Number': bill.get('bill_number', ''),
+                'Bill Title/Topic': bill.get('title', ''),
+                'Summary': bill.get('description', ''),
+                'Sponsors': self.extract_sponsors(bill.get('sponsors', []), api_handler),
+                'Last Action': self.extract_last_action(bill.get('history', [])),  # No date included
+                'Bill Link': bill.get('url', ''),
+                'Current Status': STATUS_MAPPING.get(bill.get('status'), 'Unknown'),
+                'Extracted Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            self.processing_stats['successful'] += 1
+            return processed_bill
+            
+        except Exception as e:
+            logging.error(f"Failed to process bill data: {e}")
+            self.processing_stats['failed'] += 1
+            return None
+
+    
+    def process_bills_batch(self, bill_ids, api_handler):
+        """Process multiple bills concurrently"""
+        processed_bills = []
+        
+        with ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+            # Submit all bill processing tasks
+            future_to_bill = {}
+            for bill_id in bill_ids:
+                future = executor.submit(self._process_single_bill, bill_id, api_handler)
+                future_to_bill[future] = bill_id
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_bill):
+                bill_id = future_to_bill[future]
+                try:
+                    result = future.result()
+                    if result:
+                        processed_bills.append(result)
+                except Exception as e:
+                    logging.error(f"Error processing bill {bill_id}: {e}")
+                    
+        return processed_bills
+    
+    def _process_single_bill(self, bill_id, api_handler):
+        """Process a single bill (simplified - trust API search results)"""
+        try:
+            bill_details = api_handler.get_bill_details(bill_id)
+            
+            if not bill_details or bill_details.get('status') != 'OK':
+                #print(f"    DEBUG: Bill {bill_id} - Failed to get details")
+                return None
+            
+            # Check if bill is from target years
+            bill_year = bill_details.get('bill', {}).get('session', {}).get('year_start')
+            #print(f"    DEBUG: Bill {bill_id} is from year {bill_year}")
+            
+            if bill_year not in TARGET_YEARS:
+                #print(f"    DEBUG: Filtered out {bill_id} - wrong year ({bill_year})")
+                return None
+            
+            # Skip keyword verification here - trust API search results
+            #print(f"    DEBUG: Bill {bill_id} - Processing (trusting API search)")
+            return self.process_bill_data(bill_details, api_handler)
+            
+        except Exception as e:
+            logging.error(f"Failed to process bill {bill_id}: {e}")
+            #print(f"    DEBUG: Bill {bill_id} - Error: {e}")
+            return None
+
+    def check_keyword_match(self, bill_data, target_keyword):
+        """Simplified - trust API search results"""
+        #print(f"    DEBUG: ✅ Trusting API search results for '{target_keyword}'")
+        return True, target_keyword
+    
+    def add_bill(self, processed_bill):
+        """Add a processed bill to the collection"""
+        if processed_bill:
+            self.processed_bills.append(processed_bill)
+            self.processing_stats['total_processed'] += 1
+            
+    def remove_duplicates(self):
+        """Remove duplicate bills based on state and bill number"""
+        seen = set()
+        unique_bills = []
+        
+        for bill in self.processed_bills:
+            identifier = (bill['State'], bill['Bill Number'])
+            if identifier not in seen:
+                seen.add(identifier)
+                unique_bills.append(bill)
+            else:
+                self.processing_stats['duplicates_removed'] += 1
+                logging.info(f"Removed duplicate: {bill['State']} {bill['Bill Number']}")
+        
+        self.processed_bills = unique_bills
+        
+    def save_to_excel(self, output_file=OUTPUT_FILE):
+        """Save processed bills to Excel file (optimized)"""
+        if not self.processed_bills:
+            logging.warning("No bills to save")
+            print("No bills found matching your criteria.")
+            return
+        
+        # Remove duplicates before saving
+        self.remove_duplicates()
+        
+        try:
+            df = pd.DataFrame(self.processed_bills)
+            
+            # Ensure output directory exists
+            import os
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            
+            # Save to Excel with formatting
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Bills', index=False)
+                
+                # Get the workbook and worksheet
+                worksheet = writer.sheets['Bills']
+                
+                # Auto-adjust column widths (optimized)
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            logging.info(f"Saved {len(self.processed_bills)} bills to {output_file}")
+            print(f"Successfully saved {len(self.processed_bills)} bills to {output_file}")
+            
+        except Exception as e:
+            logging.error(f"Failed to save Excel file: {e}")
+            print(f"Error saving Excel file: {e}")
+    
+    def get_summary(self):
+        """Get a summary of processed bills"""
+        if not self.processed_bills:
+            return "No bills processed"
+        
+        total_bills = len(self.processed_bills)
+        states = set(bill['State'] for bill in self.processed_bills)
+        years = set(bill['Year'] for bill in self.processed_bills)
+        
+        return f"Total Bills: {total_bills} | States: {len(states)} | Years: {sorted(years)}"
+    
+    def get_processing_stats(self):
+        """Get detailed processing statistics"""
+        return self.processing_stats
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#his is my main.py file 
+
+import logging
+from datetime import datetime
+import os
+import time
+#from concurrent.futures import ThreadPoolExecutor, as_completed
+from Bill_extractor import LegiScanAPI
+from data_processor import BillProcessor
+from config import *
+
+def setup_logging():
+    """Setup logging configuration"""
+    os.makedirs('logs', exist_ok=True)
+    
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL),
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler()
+        ]
+    )
+
+'''def process_keyword_batch(api, processor, keywords_batch):
+    """Process a batch of keywords"""
+    batch_results = []
+    
+    for keyword in keywords_batch:
+        try:
+            keyword_result = process_single_keyword(api, processor, keyword)
+            batch_results.append(keyword_result)
+        except Exception as e:
+            logging.error(f"Error processing keyword {keyword}: {e}")
+            batch_results.append({'keyword': keyword, 'count': 0, 'error': str(e)})
+    
+    return batch_results'''
+
+def process_single_keyword(api, processor, keyword):
+    """Process a single keyword efficiently"""
+    logging.info(f"Searching for keyword: {keyword}")
+    
+    keyword_bills = 0
+    
+    # Use optimized search
+    search_results = api.search_bills_optimized(keyword)
+    
+    if not search_results or search_results.get('status') != 'OK':
+        logging.warning(f"Search failed for keyword: {keyword}")
+        return {'keyword': keyword, 'count': 0, 'error': 'Search failed'}
+    
+    # Process search results
+    results = search_results.get('searchresult', {})
+    if not results:
+        return {'keyword': keyword, 'count': 0, 'error': 'No results'}
+        
+    bill_results = results.get('results', [])
+    if not bill_results:
+        return {'keyword': keyword, 'count': 0, 'error': 'No bills found'}
+    
+    print(f"  📄 Found {len(bill_results)} potential bills for '{keyword}'")
+    
+    # Process bills in batches for better performance
+    bill_ids = [result.get('bill_id') for result in bill_results if result.get('bill_id')]
+    
+    # Process bills in batches
+    for i in range(0, len(bill_ids), BATCH_SIZE):
+        batch = bill_ids[i:i + BATCH_SIZE]
+        
+        # Process batch concurrently
+        processed_bills = processor.process_bills_batch(batch, api)
+        
+        # Add valid bills to processor
+        for bill in processed_bills:
+            if bill:
+                # Double-check keyword match
+                is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
+
+                if is_match:
+                    processor.add_bill(bill)
+                    keyword_bills += 1
+                    
+                    # Show progress
+                    #bill_info = f"{bill['State']} {bill['Bill Number']}"
+                    #print(f"    ✅ {bill_info}")
+    
+    return {'keyword': keyword, 'count': keyword_bills, 'error': None}
+
+def main():
+    """Main extraction workflow (optimized for production)"""
+    start_time = time.time()
+    
+    print("=" * 60)
+    print("PRODUCTION BILL EXTRACTION SYSTEM - STARTING")
+    print("=" * 60)
+    
+    setup_logging()
+    logging.info("Starting optimized bill extraction process")
+    
+    # Initialize API handler and processor
+    api = LegiScanAPI(API_KEY)
+    processor = BillProcessor()
+    
+    print(f"Searching for bills containing {len(KEYWORDS)} healthcare-related keywords...")
+    print(f"Target years: {TARGET_YEARS}")
+    print(f"Max results per keyword: {MAX_RESULTS_PER_KEYWORD}")
+    print(f"Concurrent workers: {CONCURRENT_WORKERS}")
+    if USE_CACHING:
+        print("✅ Caching enabled for faster subsequent runs")
+    print("-" * 60)
+    
+    # Process keywords with progress tracking
+    search_results_summary = {}
+    
+    for i, keyword in enumerate(KEYWORDS, 1):
+        print(f"[{i}/{len(KEYWORDS)}] Processing: '{keyword}'")
+        
+        try:
+            result = process_single_keyword(api, processor, keyword)
+            search_results_summary[keyword] = result['count']
+            
+            if result['error']:
+                print(f"  ⚠️  {result['error']}")
+            else:
+                print(f"  📊 Added {result['count']} bills")
+                
+        except Exception as e:
+            print(f"  ❌ Error processing '{keyword}': {e}")
+            logging.error(f"Error processing keyword {keyword}: {e}")
+            search_results_summary[keyword] = 0
+        
+        print()
+    
+    # Calculate processing time
+    processing_time = time.time() - start_time
+    
+    print("=" * 60)
+    print("EXTRACTION COMPLETE")
+    print("=" * 60)
+    
+    # Show comprehensive summary
+    total_bills = len(processor.processed_bills)
+    print(f"Total bills found: {total_bills}")
+    print(f"Processing time: {processing_time:.2f} seconds ({processing_time/60:.1f} minutes)")
+    print(f"Processor summary: {processor.get_summary()}")
+    
+    # Show performance statistics
+    api_stats = api.get_performance_stats()
+    processing_stats = processor.get_processing_stats()
+    
+    print(f"\nPerformance Statistics:")
+    print(f"  API requests: {api_stats['total_requests']}")
+    print(f"  API success rate: {api_stats['success_rate']:.1f}%")
+    print(f"  Bills processed: {processing_stats['successful']}")
+    print(f"  Processing failures: {processing_stats['failed']}")
+    print(f"  Duplicates removed: {processing_stats['duplicates_removed']}")
+    
+    # Show keyword breakdown
+    print("\nKeyword Breakdown:")
+    for keyword, count in search_results_summary.items():
+        print(f"  • {keyword}: {count} bills")
+    
+    # Save results to Excel
+    print("\nSaving results to Excel...")
+    processor.save_to_excel()
+    
+    # Calculate processing rate
+    if processing_time > 0:
+        rate = total_bills / processing_time
+        print(f"\nProcessing rate: {rate:.2f} bills/second")
+    
+    print(f"\nExtraction complete! Check your results in: {OUTPUT_FILE}")
+    print(f"Logs saved to: {LOG_FILE}")
+    
+    logging.info(f"Extraction complete. Total bills: {total_bills}, Time: {processing_time:.2f}s")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nExtraction interrupted by user.")
+        logging.info("Extraction interrupted by user")
+    except Exception as e:
+        print(f"\n\nUnexpected error: {e}")
+        logging.error(f"Unexpected error: {e}")
+        raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
