@@ -1,195 +1,94 @@
+#!/usr/bin/env python3
+"""
+Louisiana Legislative Bill Scraper - Main Runner
+Searches for healthcare-related keywords in Louisiana legislative bills
+"""
 
+import os
+import sys
 import logging
 from datetime import datetime
-import os
-import time
-#from concurrent.futures import ThreadPoolExecutor, as_completed
-from Bill_extractor import LegiScanAPI
-from data_processor import BillProcessor
-from config import *
+from src.louisiana_scraper import LouisianaBillScraper, KEYWORDS
 
 def setup_logging():
     """Setup logging configuration"""
-    os.makedirs('logs', exist_ok=True)
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    
+    log_filename = f"logs/scraper_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     
     logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL),
+        level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(LOG_FILE),
-            logging.StreamHandler()
+            logging.FileHandler(log_filename),
+            logging.StreamHandler(sys.stdout)
         ]
     )
-
-'''def process_keyword_batch(api, processor, keywords_batch):
-    """Process a batch of keywords"""
-    batch_results = []
     
-    for keyword in keywords_batch:
-        try:
-            keyword_result = process_single_keyword(api, processor, keyword)
-            batch_results.append(keyword_result)
-        except Exception as e:
-            logging.error(f"Error processing keyword {keyword}: {e}")
-            batch_results.append({'keyword': keyword, 'count': 0, 'error': str(e)})
-    
-    return batch_results'''
-
-
-def process_single_keyword(api, processor, keyword):
-    """Process a single keyword with STRICT keyword verification"""
-    logging.info(f"Searching comprehensively for keyword: {keyword}")
-    
-    keyword_bills = 0
-    
-    # Use comprehensive temporal search
-    all_bill_results = api.search_bills_comprehensive(keyword)
-    
-    if not all_bill_results:
-        logging.warning(f"No results found for keyword: {keyword}")
-        return {'keyword': keyword, 'count': 0, 'error': 'No results found'}
-    
-    # Extract bill IDs and DEDUPLICATE
-    bill_ids_raw = [bill.get('bill_id') for bill in all_bill_results if bill.get('bill_id')]
-    bill_ids = list(set(bill_ids_raw))  # Remove duplicates with set()
-    
-    # Show deduplication impact
-    duplicates_removed = len(bill_ids_raw) - len(bill_ids)
-    print(f"  📋 Processing {len(bill_ids)} unique bills ({duplicates_removed} duplicates removed)")
-    
-    # Process unique bills in batches
-    total_batches = (len(bill_ids) + BATCH_SIZE - 1) // BATCH_SIZE
-    
-    for i in range(0, len(bill_ids), BATCH_SIZE):
-        batch = bill_ids[i:i + BATCH_SIZE]
-        current_batch = (i // BATCH_SIZE) + 1
-        
-        print(f"   Batch {current_batch}/{total_batches} - Processing {len(batch)} bills...")
-        
-        try:
-            # Get raw bill details first
-            processed_bills = processor.process_bills_batch_parallel(batch, api)
-            
-            #  CRITICAL FIX: Strict keyword verification before adding
-            for bill in processed_bills:
-                if bill:
-                    # Check keyword match BEFORE processing into final format
-                    is_match, matched_keyword = processor.check_keyword_match(bill, keyword)
-                    
-                    if is_match:  #  Only process bills with verified keyword matches
-                        # Process into final format only after keyword verification
-                        final_bill = processor.process_bill_data(bill, api)
-                        if final_bill:
-                            processor.add_bill(final_bill)
-                            keyword_bills += 1
-                    #  Bills without keyword matches are silently filtered out
-                        
-        except Exception as e:
-            print(f"  ❌ Error processing batch {current_batch}: {e}")
-            logging.error(f"Error processing batch {current_batch}: {e}")
-    
-    print(f"  ✅ Completed processing {keyword_bills} bills with verified keywords")
-    return {'keyword': keyword, 'count': keyword_bills, 'error': None}
-
+    return log_filename
 
 def main():
-    """Main extraction workflow (optimized for production)"""
-    start_time = time.time()
+    """Main execution function"""
+    log_file = setup_logging()
+    logger = logging.getLogger(__name__)
     
-    print("=" * 60)
-    print("PRODUCTION BILL EXTRACTION SYSTEM - STARTING")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("🚀 Louisiana Legislative Bill Scraper Started")
+    logger.info(f"📅 Run Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"📝 Log File: {log_file}")
+    logger.info("=" * 60)
     
-    setup_logging()
-    logging.info("Starting optimized bill extraction process")
+    scraper = None
     
-    # Initialize API handler and processor
-    api = LegiScanAPI(API_KEY)
-    processor = BillProcessor()
-    
-    print(f"Searching for bills containing {len(KEYWORDS)} healthcare-related keywords...")
-    print(f"Target years: {TARGET_YEARS}")
-    print(f"Max results per keyword: {MAX_RESULTS_PER_KEYWORD}")
-    print(f"Concurrent workers: {CONCURRENT_WORKERS}")
-    if USE_CACHING:
-        print("✅ Caching enabled for faster subsequent runs")
-    print("-" * 60)
-    
-    # Process keywords with progress tracking
-    search_results_summary = {}
-    
-    for i, keyword in enumerate(KEYWORDS, 1):
-        print(f"[{i}/{len(KEYWORDS)}] Processing: '{keyword}'")
+    try:
+        # Initialize scraper
+        logger.info("🔧 Initializing scraper...")
+        scraper = LouisianaBillScraper()
         
-        try:
-            result = process_single_keyword(api, processor, keyword)
-            search_results_summary[keyword] = result['count']
+        # Search for 2025 Regular Session
+        logger.info("🔍 Starting search for 2025 Regular Session...")
+        results_2025 = scraper.search_all_keywords(KEYWORDS, "2025")
+        
+        # TODO: Add 2026 when session becomes available
+        # results_2026 = scraper.search_all_keywords(KEYWORDS, "2026")
+        
+        # Combine results
+        all_results = results_2025
+        
+        if all_results:
+            # Save to Excel
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            excel_file = f"data/output/louisiana_healthcare_bills_{timestamp}.xlsx"
             
-            '''if result['error']:
-                print(f"  ⚠️  {result['error']}")
-            else:
-                print(f"  📊 Added {result['count']} bills")'''
+            saved_file = scraper.save_to_excel(all_results, excel_file)
+            
+            if saved_file:
+                logger.info("🎉 SUCCESS!")
+                logger.info(f"📊 Found {len(all_results)} unique healthcare-related bills")
+                logger.info(f"💾 Data saved to: {saved_file}")
                 
-        except Exception as e:
-            print(f"  ❌ Error processing '{keyword}': {e}")
-            logging.error(f"Error processing keyword {keyword}: {e}")
-            search_results_summary[keyword] = 0
+                # Print summary
+                logger.info("\n📋 BILL SUMMARY:")
+                for result in all_results:
+                    logger.info(f"  • {result['bill_number']} - {result['sponsors']} - '{result['matched_keyword']}'")
+            else:
+                logger.error("❌ Failed to save results to Excel")
+        else:
+            logger.info("📄 No healthcare-related bills found")
+            
+    except Exception as e:
+        logger.error(f"💥 Critical error: {str(e)}")
+        return 1
         
-       
-    
-    # Calculate processing time
-    processing_time = time.time() - start_time
-    
-    print("=" * 60)
-    print("EXTRACTION COMPLETE")
-    print("=" * 60)
-    
-    # Show comprehensive summary
-    total_bills = len(processor.processed_bills)
-    print(f"Total bills found: {total_bills}")
-    print(f"Processing time: {processing_time:.2f} seconds ({processing_time/60:.1f} minutes)")
-    print(f"Processor summary: {processor.get_summary()}")
-    
-    # Show performance statistics
-    api_stats = api.get_performance_stats()
-    processing_stats = processor.get_processing_stats()
-    
-    print(f"\nPerformance Statistics:")
-    print(f"  API requests: {api_stats['total_requests']}")
-    print(f"  API success rate: {api_stats['success_rate']:.1f}%")
-    print(f"  Bills processed: {processing_stats['successful']}")
-    print(f"  Processing failures: {processing_stats['failed']}")
-    print(f"  Duplicates removed: {processing_stats['duplicates_removed']}")
-    
-    # Show keyword breakdown
-    print("\nKeyword Breakdown:")
-    for keyword, count in search_results_summary.items():
-        print(f"  • {keyword}: {count} bills")
-    
-    # Save results to Excel
-    print("\nSaving results to Excel...")
-    processor.save_to_excel()
-    
-    # Calculate processing rate
-    if processing_time > 0:
-        rate = total_bills / processing_time
-        print(f"\nProcessing rate: {rate:.2f} bills/second")
-    
-    print(f"\nExtraction complete! Check your results in: {OUTPUT_FILE}")
-    print(f"Logs saved to: {LOG_FILE}")
-    
-    logging.info(f"Extraction complete. Total bills: {total_bills}, Time: {processing_time:.2f}s")
+    finally:
+        if scraper:
+            logger.info("🔄 Closing browser...")
+            scraper.close()
+        
+        logger.info("✅ Scraper execution completed!")
+        
+    return 0
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\nExtraction interrupted by user.")
-        logging.info("Extraction interrupted by user")
-    except Exception as e:
-        print(f"\n\nUnexpected error: {e}")
-        logging.error(f"Unexpected error: {e}")
-        raise
-
-
-
+    sys.exit(main())
