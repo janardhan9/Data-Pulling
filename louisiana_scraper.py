@@ -211,7 +211,7 @@ class LouisianaBillScraper:
             return []
     
     def extract_bill_data_from_result_rows(self, bill_row, summary_row, keyword, session_year):
-        """Extract bill data from the structured ResultsListTable rows"""
+        """Extract bill data from the structured ResultsListTable rows with enhanced sponsor extraction"""
         try:
             # Extract bill number and link
             bill_link_elem = bill_row.find('a', href=lambda href: href and 'BillInfo.aspx' in href)
@@ -229,9 +229,8 @@ class LouisianaBillScraper:
             else:
                 bill_link = f"{self.base_url}/Legis/{bill_href}"
             
-            # Extract author
-            author_elem = bill_row.find('a', href=lambda href: href and ('senate.la.gov' in href or 'house.la.gov' in href))
-            sponsors = author_elem.get_text(strip=True) if author_elem else 'Unknown'
+            # Enhanced sponsor extraction with multiple fallback methods
+            sponsors = self.extract_sponsors_enhanced(bill_row)
             
             # Extract current status
             status_elem = bill_row.find('span', id=lambda x: x and 'LabelStatus' in x)
@@ -280,6 +279,94 @@ class LouisianaBillScraper:
         except Exception as e:
             print(f"❌ Error extracting bill data from rows: {str(e)}")
             return None
+    
+    def extract_sponsors_enhanced(self, bill_row):
+        """Enhanced sponsor extraction with multiple fallback methods"""
+        try:
+            # Method 1: Look for standard senate/house.la.gov links
+            author_elem = bill_row.find('a', href=lambda href: href and ('senate.la.gov' in href or 'house.la.gov' in href))
+            if author_elem:
+                sponsor_name = author_elem.get_text(strip=True)
+                if sponsor_name and sponsor_name.upper() not in ['', 'UNKNOWN']:
+                    print(f"  ✅ Found sponsor via method 1: {sponsor_name}")
+                    return sponsor_name
+            
+            # Method 2: Look for any links that might be author links (broader search)
+            all_links = bill_row.find_all('a')
+            for link in all_links:
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                
+                # Skip bill info links
+                if 'BillInfo.aspx' in href:
+                    continue
+                    
+                # Look for links with author-like text (all caps, reasonable length)
+                if text and len(text) > 2 and len(text) < 50 and text.isupper():
+                    print(f"  ✅ Found sponsor via method 2: {text}")
+                    return text
+            
+            # Method 3: Look in specific table cells (second column typically has author)
+            cells = bill_row.find_all(['td', 'th'])
+            if len(cells) >= 2:
+                # Check second cell for author name
+                author_cell = cells[1]
+                
+                # First try to find a link in the author cell
+                author_link = author_cell.find('a')
+                if author_link:
+                    author_text = author_link.get_text(strip=True)
+                    if author_text and len(author_text) > 2 and author_text.upper() not in ['UNKNOWN', '']:
+                        print(f"  ✅ Found sponsor via method 3a: {author_text}")
+                        return author_text
+                
+                # If no link, try to extract text directly from the cell
+                cell_text = author_cell.get_text(strip=True)
+                # Clean up the text (remove extra whitespace, newlines)
+                cell_text = ' '.join(cell_text.split())
+                
+                if cell_text and len(cell_text) > 2 and len(cell_text) < 50:
+                    # Filter out common non-author text
+                    exclude_patterns = ['more...', 'billinfo', 'considered', 'status', 'current']
+                    if not any(pattern.lower() in cell_text.lower() for pattern in exclude_patterns):
+                        print(f"  ✅ Found sponsor via method 3b: {cell_text}")
+                        return cell_text
+            
+            # Method 4: Look for text patterns that match author names (all caps words)
+            row_text = bill_row.get_text()
+            
+            # Look for patterns like "SMITH", "JONES", "MARTIN", etc.
+            author_pattern = r'\b[A-Z]{3,15}\b'
+            matches = re.findall(author_pattern, row_text)
+            
+            for match in matches:
+                # Filter out common non-author words
+                exclude_words = ['BILL', 'ACT', 'HOUSE', 'SENATE', 'MORE', 'CURRENT', 'STATUS', 'SIGNED', 'PASSED', 'GOVERNOR', 'PRESIDENT']
+                if match not in exclude_words and len(match) >= 4:
+                    print(f"  ✅ Found sponsor via method 4: {match}")
+                    return match
+            
+            # Method 5: Look for LinkAuthor control ID pattern
+            author_link_by_id = bill_row.find('a', id=lambda x: x and 'LinkAuthor' in x)
+            if author_link_by_id:
+                author_text = author_link_by_id.get_text(strip=True)
+                if author_text and len(author_text) > 2:
+                    print(f"  ✅ Found sponsor via method 5: {author_text}")
+                    return author_text
+            
+            # Method 6: Debug - show what we have in this row for troubleshooting
+            print(f"  🔍 Debug - Row content for sponsor extraction:")
+            for i, cell in enumerate(cells[:4]):  # Only show first 4 cells
+                cell_text = cell.get_text(strip=True)[:80]  # Truncate long text
+                links_in_cell = len(cell.find_all('a'))
+                print(f"    Cell {i}: '{cell_text}' (links: {links_in_cell})")
+            
+            print(f"  ❌ No sponsor found using any method")
+            return 'Unknown'
+            
+        except Exception as e:
+            print(f"  ❌ Error in enhanced sponsor extraction: {str(e)}")
+            return 'Unknown'
     
     def search_all_keywords(self, keywords=None, session_year="2025"):
         """Search for all keywords using isolated browser sessions"""
@@ -391,6 +478,7 @@ class LouisianaBillScraper:
             print(f"✅ Test passed! Found {len(test_results)} results")
             for result in test_results:
                 print(f"  - {result.get('bill_number', 'Unknown')}: {result.get('sponsors', 'Unknown')}")
+                print(f"    Status: {result.get('last_action', 'Unknown')}")
             return True
         else:
             print("❌ Test failed - no results found")
@@ -405,25 +493,25 @@ if __name__ == "__main__":
     scraper = LouisianaBillScraper()
     
     try:
-        print("🚀 Testing Louisiana Bill Scraper with ISOLATED Sessions")
+        print("🚀 Testing Louisiana Bill Scraper with Enhanced Sponsor Extraction")
         print("=" * 70)
         
         # Test search functionality
         success = scraper.test_search_functionality()
         
         if success:
-            print("\n✅ Isolated scraper is working correctly!")
+            print("\n✅ Enhanced scraper is working correctly!")
             
             print("\n" + "=" * 70)
-            print("🎯 Ready to search all keywords with isolated sessions?")
-            print("   - Each keyword gets a fresh Chrome browser")
-            print("   - No session conflicts or crashes")
-            print("   - Takes longer but much more reliable")
+            print("🎯 Ready to search all keywords with enhanced sponsor extraction?")
+            print("   - Better sponsor name detection")
+            print("   - Multiple fallback methods")
+            print("   - Debug output for troubleshooting")
             
-            user_input = input("\nRun full isolated search? (y/n): ").lower().strip()
+            user_input = input("\nRun full search with enhanced features? (y/n): ").lower().strip()
             
             if user_input == 'y':
-                print("\n🚀 Starting full isolated keyword search...")
+                print("\n🚀 Starting full enhanced keyword search...")
                 
                 # Run search for all keywords
                 all_results = scraper.search_all_keywords(KEYWORDS, "2025")
@@ -433,7 +521,17 @@ if __name__ == "__main__":
                     excel_file = scraper.save_to_excel(all_results)
                     
                     if excel_file:
-                        print(f"\n🎉 SUCCESS! Data saved to: {excel_file}")
+                        print(f"\n🎉 SUCCESS! Enhanced data saved to: {excel_file}")
+                        
+                        # Show sponsor extraction summary
+                        sponsors_found = [r['sponsors'] for r in all_results if r['sponsors'] != 'Unknown']
+                        unknown_count = len([r for r in all_results if r['sponsors'] == 'Unknown'])
+                        
+                        print(f"\n📊 SPONSOR EXTRACTION SUMMARY:")
+                        print(f"   - Found sponsors: {len(sponsors_found)}")
+                        print(f"   - Unknown sponsors: {unknown_count}")
+                        print(f"   - Success rate: {len(sponsors_found)/(len(sponsors_found)+unknown_count)*100:.1f}%")
+                        
                     else:
                         print("\n❌ Failed to save Excel file")
                 else:
